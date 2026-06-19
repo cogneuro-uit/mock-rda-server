@@ -1,0 +1,40 @@
+{
+  "name": "claude-autonomous-sandbox",
+  "build": { "dockerfile": "Dockerfile" },
+
+  "remoteUser": "vscode",
+  "containerUser": "vscode",
+
+  // Persist Claude login/session across container rebuilds.
+  "mounts": [
+    "source=claude-sandbox-config,target=/home/vscode/.claude,type=volume"
+  ],
+  "containerEnv": {
+    "CLAUDE_CONFIG_DIR": "/home/vscode/.claude"
+  },
+
+  // Install the official Claude Code extension into the container and configure
+  // it for autonomous operation (auto-accept changes, no per-action prompts).
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "anthropic.claude-code"
+      ],
+      "settings": {
+        // Auto-apply Claude's changes without the accept/reject prompt.
+        // (Setting key may evolve between extension versions — see note below.)
+        "claude-code.autoAccept": true,
+        // Mark this workspace trusted so the extension isn't blocked by
+        // Restricted Mode (it does not run in Restricted Mode).
+        "security.workspace.trust.enabled": false
+      }
+    }
+  },
+
+  // After (re)build, restore R + Python environments from the lockfiles if present.
+  "postCreateCommand": "bash .devcontainer/restore-env.sh"
+
+  // NOTE: deliberately NO firewall / NET_ADMIN. Outbound network is fully open
+  // by design. Only the workspace folder is mounted, so host secrets
+  // (~/.ssh, ~/.aws, dotfiles) are NOT visible inside.
+}

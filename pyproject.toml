@@ -1,0 +1,46 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "mock-rda"
+version = "0.1.0"
+description = "Mock BrainVision RDA (Remote Data Access) server for closed-loop / iTEP client development without a live amplifier."
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "MIT" }
+authors = [{ name = "Matthias Mittner", email = "matthias.mittner@uit.no" }]
+keywords = ["eeg", "brainvision", "rda", "tms", "itep", "closed-loop", "neurofeedback"]
+classifiers = [
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Topic :: Scientific/Engineering",
+    "Intended Audience :: Science/Research",
+]
+dependencies = ["numpy>=1.24"]
+
+[project.optional-dependencies]
+file = ["mne>=1.5"]
+test = ["pytest>=7", "mne>=1.5", "mne-lsl>=1.5"]
+
+[project.scripts]
+mock-rda = "mock_rda.cli:main"
+
+[project.urls]
+Homepage = "https://github.com/mmittner/mock-rda-server"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/mock_rda"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+markers = [
+    "mne_lsl: cross-test against the mne-lsl RDA client (skipped if mne-lsl is unavailable)",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "W", "UP", "B"]
