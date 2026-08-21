@@ -32,6 +32,10 @@ def _build_source(args) -> FileSource | SyntheticSource:
     if args.mode == "file":
         source = FileSource(args.vhdr, loop=args.loop)
         source.block_points = _block_points(source.sample_rate, args.block_ms)
+        duration = source.n_samples / source.sample_rate
+        print(f"[mock-rda] file: {source.n_samples} samples = {duration:.1f} s, "
+              f"{len(source.markers)} markers"
+              f"{' (looping)' if args.loop else ''}", file=sys.stderr)
         return source
     tep = TEPTemplate() if args.tep_template != "none" else None
     bp = _block_points(args.rate, args.block_ms)

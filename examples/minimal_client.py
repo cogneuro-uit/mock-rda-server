@@ -36,7 +36,8 @@ class RDAClient:
         while True:
             try:
                 chunk = self.sock.recv(65536)
-            except TimeoutError:
+            except OSError:
+                # timeout, or the socket was closed (e.g. on shutdown) -> stop.
                 return
             if not chunk:
                 return
@@ -61,9 +62,16 @@ def main() -> None:
     ap.add_argument("--host", default="127.0.0.1")
     ap.add_argument("--port", type=int, default=51244)
     ap.add_argument("--max-blocks", type=int, default=0, help="stop after N data blocks (0 = run)")
+    ap.add_argument(
+        "--timeout",
+        type=float,
+        default=5.0,
+        help="socket timeout in seconds; raise it against a real Recorder that "
+        "may sit idle between connect and Monitor mode",
+    )
     args = ap.parse_args()
 
-    client = RDAClient(args.host, args.port)
+    client = RDAClient(args.host, args.port, timeout=args.timeout)
     n_blocks = 0
     try:
         for mtype, fields in client.messages():
@@ -91,6 +99,12 @@ def main() -> None:
                 print("STOP")
             elif mtype == MsgType.KEEP_ALIVE:
                 print("KEEP_ALIVE")
+            else:
+                # Real Recorder also emits NEWSTATE (5) and INFO (9), which the mock
+                # server does not. Dump them so a live capture can be inspected.
+                payload = fields["payload"]
+                name = MsgType(mtype).name if mtype in set(MsgType) else "UNKNOWN"
+                print(f"{name}({mtype}): {len(payload)} bytes payload\n  {payload[:64].hex(' ')}")
     except KeyboardInterrupt:
         pass
     finally:
