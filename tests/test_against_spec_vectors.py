@@ -27,7 +27,7 @@ START_HEX = (
 )
 DATA_HEX = (
     "8e45584396c9864caf4a98bbf6c9145052000000040000000500000002000000010000"
-    "000000803f0000004000004040000080401e0000000100000001000000ffffffff5374"
+    "000000803f0000404000000040000080401e0000000100000001000000ffffffff5374"
     "696d756c7573005320203100"
 )
 STOP_HEX = "8e45584396c9864caf4a98bbf6c914501800000003000000"
@@ -61,7 +61,7 @@ def test_data32_frozen_and_handbuilt():
 
     # hand-derived
     body = struct.pack("<III", 5, 2, 1)  # nBlock, nPoints, nMarkers
-    body += struct.pack("<4f", 1.0, 2.0, 3.0, 4.0)  # channel-major flatten
+    body += struct.pack("<4f", 1.0, 3.0, 2.0, 4.0)  # multiplexed by sample: pt0[ch0,ch1], pt1[ch0,ch1]
     type_b = b"Stimulus\0"
     desc_b = b"S  1\0"
     marker_size = 16 + len(type_b) + len(desc_b)
@@ -78,9 +78,11 @@ def test_stop_keepalive_frozen():
     assert p.encode_keepalive() == GUID + struct.pack("<II", 24, 10000)
 
 
-def test_channel_major_layout():
-    # 3 channels, 2 points: bytes must be ch0[p0,p1], ch1[p0,p1], ch2[p0,p1].
+def test_sample_major_layout():
+    # 3 channels, 2 points: bytes must be multiplexed by sample -- pt0[ch0,ch1,ch2],
+    # pt1[ch0,ch1,ch2] -- matching real Recorder's RDA stream and the .eeg file's
+    # own MULTIPLEXED layout (confirmed against a live BrainVision Recorder capture).
     data = np.array([[10, 11], [20, 21], [30, 31]], dtype=np.float32)
     msg = p.encode_data32(0, data, [], 0)
     floats = struct.unpack_from("<6f", msg, p.HEADER_SIZE + 12)
-    assert floats == (10, 11, 20, 21, 30, 31)
+    assert floats == (10, 20, 30, 11, 21, 31)

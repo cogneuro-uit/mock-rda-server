@@ -142,8 +142,10 @@ def encode_data32(
     block_idx:
         Monotonically increasing block counter (``nBlock``).
     data_f32_ch_major:
-        ``float32`` array shaped ``[n_channels, n_points]``. Sent channel-major
-        (channel 0's points, then channel 1's, ...), i.e. C-order flatten.
+        ``float32`` array shaped ``[n_channels, n_points]`` (the caller's/source's
+        convention). Sent over the wire **multiplexed by sample** (all channels
+        for point 0, then all channels for point 1, ...), matching real
+        Recorder's RDA stream and the ``.eeg`` file's own MULTIPLEXED layout.
     markers:
         Markers carrying **absolute** sample positions; converted to
         block-relative ``nPosition = marker.sample - block_start_sample`` here.
@@ -151,14 +153,14 @@ def encode_data32(
         Absolute sample index of this block's first sample.
     """
     markers = markers or []
-    data = np.ascontiguousarray(data_f32_ch_major, dtype="<f4")
+    data = np.asarray(data_f32_ch_major, dtype="<f4")
     if data.ndim != 2:
         raise ValueError(f"data must be 2-D [channels, points], got shape {data.shape}")
     n_points = data.shape[1]
 
     payload = bytearray()
     payload += _DATA_PREFIX.pack(block_idx, n_points, len(markers))
-    payload += data.tobytes(order="C")  # channel-major
+    payload += np.ascontiguousarray(data.T).tobytes(order="C")  # multiplexed by sample
     for m in markers:
         payload += _encode_marker(m, block_start_sample)
     return _message(MsgType.DATA32, bytes(payload))
@@ -220,15 +222,17 @@ def decode_data32(buf: bytes, n_channels: int) -> dict:
     """Decode a DATA32 message buffer.
 
     ``n_channels`` must be supplied (the block itself only stores ``nPoints``);
-    it comes from the preceding START message.
+    it comes from the preceding START message. The wire payload is multiplexed
+    by sample (see :func:`encode_data32`); this reshapes back to ``[n_channels,
+    n_points]`` for callers.
     """
     n_type, payload = _split_payload(buf, MsgType.DATA32)
     n_block, n_points, n_markers = _DATA_PREFIX.unpack_from(payload, 0)
     off = _DATA_PREFIX.size
     count = n_channels * n_points
     data = np.frombuffer(payload, dtype="<f4", count=count, offset=off).reshape(
-        n_channels, n_points
-    )
+        n_points, n_channels
+    ).T
     off += count * 4
     markers = _decode_markers(payload, off, n_markers)
     return {

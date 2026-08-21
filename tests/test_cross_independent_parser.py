@@ -56,7 +56,8 @@ class IndependentRDAParser:
             n_block, n_points, n_markers = struct.unpack_from("<III", payload, 0)
             off = 12
             count = self.n_channels * n_points
-            data = np.frombuffer(payload, "<f4", count, off).reshape(self.n_channels, n_points)
+            # multiplexed by sample: pt0[ch0..chN], pt1[ch0..chN], ...
+            data = np.frombuffer(payload, "<f4", count, off).reshape(n_points, self.n_channels).T
             off += 4 * count
             markers = []
             for _ in range(n_markers):

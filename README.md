@@ -90,7 +90,10 @@ joined and terminated by `\0`.
 
 **DATA32 (type 4)** payload: `<LLL` = `nBlock` (monotonic counter), `nPoints`
 (samples per channel), `nMarkers`; then `nChannels × nPoints` float32 data,
-**channel-major** (`array2d[channels, points].flatten()`); then the markers.
+**multiplexed by sample** (`array2d[points, channels].flatten()` — all channels
+for point 0, then all channels for point 1, ...); then the markers. Confirmed
+against a live BrainVision Recorder capture (2026-08-21); matches the `.eeg`
+file's own MULTIPLEXED layout.
 
 **Marker struct:** `<LlLl` = `nSize`, `nPosition` (sample offset relative to the
 **start of this block**, 0-based), `nPoints` (duration in samples), `nChannel`
@@ -130,6 +133,12 @@ that diffs against it, so the lab trip is needed only once. Separately, confirm
 Brain Products' own clients (**RecView**, the compiled `LSL-BrainVisionRDA`
 app) connect and render sane data — these are GUI/compiled binaries and stay
 manual.
+
+**Done (2026-08-21):** DATA32 sample ordering, against a live Recorder —
+confirmed multiplexed-by-sample, not channel-major as first assumed (see
+`tests/test_real_recorder_capture.py` and its golden fixture). Still open:
+diffing START's cp1252-vs-INFO's UTF-16LE encoding, INFO (type 9) presence,
+and a RecView/LSL-BrainVisionRDA smoke test.
 
 > **START encoding quirk to verify with a real capture:** the reference
 > server's START uses cp1252 names while its INFO (type 9) uses UTF-16LE names +
