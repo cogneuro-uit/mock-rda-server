@@ -12,13 +12,20 @@ layout (see [`protocol.py`](src/mock_rda/protocol.py)); no GPL code is copied.
 ## Install
 
 ```bash
+pip install git+https://github.com/cogneuro-uit/mock-rda-server.git
+```
+
+Or from a local checkout, for development:
+
+```bash
+git clone https://github.com/cogneuro-uit/mock-rda-server.git
+cd mock-rda-server
 pip install -e .            # core (numpy only)
 pip install -e ".[file]"    # + MNE, for file-source cross-checks
 pip install -e ".[test]"    # + pytest, mne, mne-lsl, for the test suite
 ```
 
-In this devcontainer everything lives in the conda env `project` (see
-`CLAUDE.md`); `environment.yml` pins it.
+Requires Python ≥ 3.11. A conda environment is pinned in `environment.yml`.
 
 ## Usage
 
@@ -97,7 +104,7 @@ null-terminated UTF-8 `description` string.
 
 ## Validation
 
-Two tiers (see [`mock-rda-server-PLAN.md`](mock-rda-server-PLAN.md) §6):
+Two tiers:
 
 - **Default tier** (pure Python, gates CI): spec byte-vectors, encode/decode
   round-trip, file-source exactness against the fixture, marker alignment across

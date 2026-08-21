@@ -1,4 +1,4 @@
-# System (apt) packages to reinstall on container rebuild (see CLAUDE.md).
+# System (apt) packages to reinstall on container rebuild.
 # One package name per line; '#' comments and blank lines are ignored.
 #
 # None required: the project is pure Python (conda env in environment.yml).
