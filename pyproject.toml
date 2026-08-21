@@ -27,7 +27,7 @@ test = ["pytest>=7", "mne>=1.5", "mne-lsl>=1.5"]
 mock-rda = "mock_rda.cli:main"
 
 [project.urls]
-Homepage = "https://github.com/mmittner/mock-rda-server"
+Homepage = "https://github.com/cogneuro-uit/mock-rda-server"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/mock_rda"]
