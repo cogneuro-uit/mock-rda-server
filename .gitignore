@@ -19,3 +19,5 @@ dist/
 # Local-only working notes (kept out of the public repo)
 CLAUDE.md
 mock-rda-server-PLAN.md
+
+uv.lock

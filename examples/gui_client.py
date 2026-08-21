@@ -310,11 +310,12 @@ def run_gui(args):
         mtype = "Stimulus" if args.any_marker else args.trigger
         desc = args.trigger_desc or "S  1"
         status_var.set("injecting…")
-        threading.Thread(
-            target=lambda: status_var.set(
-                send_inject(args.host, args.control_port, mtype, desc)),
-            daemon=True,
-        ).start()
+
+        def worker():
+            result = send_inject(args.host, args.control_port, mtype, desc)
+            root.after(0, lambda: status_var.set(result))
+
+        threading.Thread(target=worker, daemon=True).start()
 
     ttk.Button(ctrl, text="Inject trigger", command=inject_trigger).grid(
         row=3, column=0, columnspan=2, sticky="we", pady=(4, 0))

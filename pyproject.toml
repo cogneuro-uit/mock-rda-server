@@ -17,7 +17,12 @@ classifiers = [
     "Topic :: Scientific/Engineering",
     "Intended Audience :: Science/Research",
 ]
-dependencies = ["numpy>=1.24"]
+dependencies = [
+    "matplotlib>=3.11.1",
+    "mne>=1.12.1",
+    "numpy>=1.24",
+    "scipy>=1.17.1",
+]
 
 [project.optional-dependencies]
 file = ["mne>=1.5"]

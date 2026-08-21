@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import argparse
 import os
+import sys
 
 import numpy as np
 from minimal_client import RDAClient
@@ -42,10 +43,11 @@ def main() -> None:
                     help="stop after N data blocks (0 = run until interrupted)")
     args = ap.parse_args()
 
-    # Choose a backend before importing pyplot. Headless when saving or when no
-    # usable display is present (a container with DISPLAY set but no X auth still
-    # cannot open a window, so prefer Agg unless the user wants a live window).
-    headless = bool(args.save) or not os.environ.get("DISPLAY")
+    # Choose a backend before importing pyplot. Headless when saving, or on Linux
+    # with no X display (DISPLAY is an X11-only concept — Windows/macOS have a
+    # native display without it, so only gate on DISPLAY there).
+    no_linux_display = sys.platform.startswith("linux") and not os.environ.get("DISPLAY")
+    headless = bool(args.save) or no_linux_display
     import matplotlib
     if headless:
         matplotlib.use("Agg")
