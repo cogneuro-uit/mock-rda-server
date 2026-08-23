@@ -148,8 +148,8 @@ def main(argv=None) -> int:
             try:
                 from .gui import run_control_gui
                 run_control_gui(server, stop_event, burst_count=args.burst_count,
-                                burst_isi_ms=args.burst_isi, on_inject=_announce,
-                                on_ready=_start_status_thread)
+                                burst_isi_ms=args.burst_isi, control_port=cport,
+                                on_inject=_announce, on_ready=_start_status_thread)
                 stop_event.set()
             except Exception as exc:
                 print(f"[mock-rda] control GUI unavailable ({exc}); running headless",

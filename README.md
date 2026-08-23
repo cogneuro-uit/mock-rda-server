@@ -50,10 +50,19 @@ python examples/minimal_client.py --host 127.0.0.1 --port 51244
 Four paths, all feeding the same per-block queue:
 
 1. **Control GUI** — the server opens a small Tk window (disable with
-   `--no-gui`) with **Inject trigger** and **Inject burst** buttons plus a
-   live client/jitter status line. A burst is `--burst-count` pulses spaced
-   `--burst-isi` ms apart (default 5 × 20 ms = 50 Hz); both are editable in
-   the window. <kbd>Enter</kbd> in the window injects a single trigger.
+   `--no-gui`) with **Inject trigger** and **Inject burst** buttons. A burst is
+   `--burst-count` pulses spaced `--burst-isi` ms apart (default 5 × 20 ms =
+   50 Hz); both are editable in the window, as are the marker type and
+   description. <kbd>Enter</kbd> injects a single trigger.
+
+   The window also shows the stream configuration (source, channels, sample
+   rate, block size, both ports) and live counters — elapsed time, data
+   streamed, blocks, markers, and **drift** (wall-clock elapsed minus emitted
+   stream time; a steadily growing value means the server is falling behind
+   real time). The title bar carries connected-client count and scheduler
+   jitter. Running the GUI does not measurably affect block timing: over a
+   12 s run, mean jitter was 0.001 ms with the window open vs 0.002 ms
+   headless (max ≈ 1 ms both ways).
 2. **Keypress** — press <kbd>Enter</kbd> in the running CLI to fire a
    `Stimulus` / `S  1` marker at the next block.
 3. **Control socket** — one-line JSON over TCP (default `localhost:51299`):

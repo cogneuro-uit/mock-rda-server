@@ -14,6 +14,7 @@ import queue
 import socket
 import sys
 import threading
+import time
 
 from .markers import InjectionQueue, Marker
 from .protocol import encode_data32, encode_keepalive, encode_start, encode_stop
@@ -110,7 +111,28 @@ class Server:
         self._acq_thread: threading.Thread | None = None
         self._start_msg = b""
 
+        # Live stream counters, written only by the acquisition thread and read
+        # (unsynchronized, by design) by status displays. Plain int/float
+        # rebinding is atomic under the GIL, and a monitor that reads a value
+        # one block stale is harmless.
+        self.samples_streamed = 0
+        self.blocks_streamed = 0
+        self.markers_streamed = 0
+        self.stream_started_at: float | None = None
+
     # -- public API -------------------------------------------------------- #
+    @property
+    def stream_seconds(self) -> float:
+        """Wall-clock seconds since the first block was emitted (0 before that)."""
+        if self.stream_started_at is None:
+            return 0.0
+        return time.monotonic() - self.stream_started_at
+
+    @property
+    def bytes_streamed(self) -> int:
+        """Approximate DATA32 payload bytes generated (float32 samples × channels)."""
+        return self.samples_streamed * self.source.n_channels * 4
+
     def inject(self, marker: Marker) -> None:
         """Queue a marker for injection (in-process API)."""
         self.injector.inject(marker)
@@ -206,6 +228,7 @@ class Server:
         self.scheduler.reset()
         sample_counter = 0
         block_idx = 0
+        self.stream_started_at = time.monotonic()
         for data, src_markers in self.source.blocks():
             if self._stop.is_set():
                 break
@@ -218,6 +241,9 @@ class Server:
             self._broadcast(msg)
             sample_counter += n
             block_idx += 1
+            self.samples_streamed = sample_counter
+            self.blocks_streamed = block_idx
+            self.markers_streamed += len(markers)
             if self._stop.is_set():
                 break
             self.scheduler.wait_next()

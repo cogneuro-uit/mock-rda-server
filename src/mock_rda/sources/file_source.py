@@ -146,6 +146,7 @@ class FileSource(SourceBase):
         loop: bool = False,
     ) -> None:
         vhdr = Path(vhdr_path)
+        self.vhdr_path = vhdr
         meta = _parse_vhdr(vhdr)
         self.n_channels = meta["n_channels"]
         self.sample_rate = meta["sample_rate"]
