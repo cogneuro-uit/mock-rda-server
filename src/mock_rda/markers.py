@@ -52,12 +52,25 @@ class InjectionQueue:
 
     def __init__(self) -> None:
         self._lock = threading.Lock()
-        self._pending: list[Marker] = []
+        # Each entry is (marker, follower_offsets): a plain injection carries no
+        # offsets; a burst head carries the sample offsets of its follower pulses.
+        self._pending: list[tuple[Marker, tuple[int, ...]]] = []
 
     def inject(self, marker: Marker) -> None:
         """Add a marker to the queue (thread-safe)."""
         with self._lock:
-            self._pending.append(marker)
+            self._pending.append((marker, ()))
+
+    def inject_burst(self, marker: Marker, offsets) -> None:
+        """Add ``marker`` plus one copy at ``marker.sample + off`` per positive
+        sample offset in ``offsets`` (thread-safe).
+
+        An ``AT_NEXT`` head is resolved to a concrete sample only at drain time,
+        and the followers are placed relative to that resolved sample — so a
+        burst keeps its exact spacing no matter which block the head lands in.
+        """
+        with self._lock:
+            self._pending.append((marker, tuple(int(o) for o in offsets if o > 0)))
 
     def drain_for_block(self, block_start: int, block_points: int) -> list[Marker]:
         """Return markers belonging to block ``[block_start, block_start+block_points)``.
@@ -65,18 +78,27 @@ class InjectionQueue:
         ``AT_NEXT`` markers are stamped at ``block_start``. Concrete markers whose
         sample falls before the block (already passed) are also emitted in this
         block, clamped to ``block_start``, so a late injection is never silently
-        dropped. Markers targeting a later block remain queued.
+        dropped. Markers targeting a later block remain queued. When a burst
+        head resolves, its followers are enqueued at concrete samples relative
+        to the head (and emitted immediately if they fall inside this block).
         """
         block_end = block_start + block_points
         out: list[Marker] = []
-        keep: list[Marker] = []
+        keep: list[tuple[Marker, tuple[int, ...]]] = []
         with self._lock:
-            for m in self._pending:
+            work = self._pending
+            i = 0
+            while i < len(work):
+                m, offsets = work[i]
+                i += 1
                 if m.sample == AT_NEXT or m.sample < block_end:
                     sample = block_start if m.sample == AT_NEXT else max(m.sample, block_start)
                     out.append(Marker(sample, m.type, m.description, m.points, m.channel))
+                    for off in offsets:
+                        work.append((Marker(sample + off, m.type, m.description,
+                                            m.points, m.channel), ()))
                 else:
-                    keep.append(m)
+                    keep.append((m, offsets))
             self._pending = keep
         out.sort(key=lambda m: m.sample)
         return out

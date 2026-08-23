@@ -115,6 +115,14 @@ class Server:
         """Queue a marker for injection (in-process API)."""
         self.injector.inject(marker)
 
+    def inject_burst(self, marker: Marker, count: int, isi_ms: float) -> None:
+        """Queue a pulse burst: ``marker`` plus ``count - 1`` copies ``isi_ms`` apart."""
+        if count <= 1:
+            self.injector.inject(marker)
+            return
+        isi = max(1, round(isi_ms * self.source.sample_rate / 1000.0))
+        self.injector.inject_burst(marker, [k * isi for k in range(1, count)])
+
     @property
     def client_count(self) -> int:
         with self._clients_lock:

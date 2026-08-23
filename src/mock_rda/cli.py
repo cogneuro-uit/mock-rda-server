@@ -5,9 +5,10 @@
     mock-rda file  RECORDING.vhdr [--loop] [--block-ms 4] [--port 51244] [--control-port 51299]
     mock-rda synth --channels 64 --rate 5000 [--block-ms 4] [--tep-template default] [--port ...]
 
-Both modes accept manual injection via keypress (press Enter) and the JSON
-control socket. Realized timing jitter and connected-client count are printed
-to stderr.
+Both modes accept manual injection via the control GUI (a small Tk window with
+"Inject trigger" / "Inject burst" buttons; disable with ``--no-gui``), keypress
+(press Enter), and the JSON control socket. Realized timing jitter and
+connected-client count are printed to stderr.
 """
 
 from __future__ import annotations
@@ -64,6 +65,14 @@ def _parse_args(argv):
     common.add_argument("--host", default="0.0.0.0")
     common.add_argument("--name-encoding", default="cp1252",
                         help="text codec for START channel names")
+    common.add_argument("--gui", action=argparse.BooleanOptionalAction, default=True,
+                        help="show the injection control window (falls back to "
+                             "headless if no display)")
+    common.add_argument("--burst-count", type=int, default=5,
+                        help="default pulse count for GUI burst injection")
+    common.add_argument("--burst-isi", type=float, default=20.0,
+                        help="default inter-pulse interval (ms) for GUI burst "
+                             "injection (20 ms = 50 Hz)")
 
     pf = sub.add_parser("file", parents=[common], help="stream a .vhdr/.eeg/.vmrk triplet")
     pf.add_argument("vhdr")
@@ -93,7 +102,8 @@ def main(argv=None) -> int:
         print(f"[mock-rda] injected {marker.type!r}/{marker.description!r} "
               f"(at={'next' if marker.sample < 0 else marker.sample})", file=sys.stderr)
 
-    control = ControlSocketServer(server.injector, port=args.control_port, on_inject=_announce)
+    control = ControlSocketServer(server.injector, port=args.control_port,
+                                  on_inject=_announce, sample_rate=source.sample_rate)
 
     server.start()
     cport = control.start()
@@ -111,7 +121,7 @@ def main(argv=None) -> int:
     if hasattr(signal, "SIGTERM"):
         signal.signal(signal.SIGTERM, _handle_sigint)
 
-    try:
+    def _status_loop():
         while not stop_event.is_set():
             if server._acq_thread is not None and not server._acq_thread.is_alive():
                 # Acquisition finished (e.g. file EOF without --loop): keep running
@@ -123,6 +133,31 @@ def main(argv=None) -> int:
                   f"jitter last={sched.last_jitter * 1e3:+.3f} ms "
                   f"mean={sched.mean_abs_jitter * 1e3:.3f} ms "
                   f"max={sched.max_abs_jitter * 1e3:.3f} ms", file=sys.stderr)
+
+    status_started = threading.Event()
+
+    def _start_status_thread():
+        # Called by the GUI once its window exists, so a failed GUI start can
+        # still fall back to running the status loop in the main thread.
+        if not status_started.is_set():
+            status_started.set()
+            threading.Thread(target=_status_loop, name="status", daemon=True).start()
+
+    try:
+        if args.gui:
+            try:
+                from .gui import run_control_gui
+                run_control_gui(server, stop_event, burst_count=args.burst_count,
+                                burst_isi_ms=args.burst_isi, on_inject=_announce,
+                                on_ready=_start_status_thread)
+                stop_event.set()
+            except Exception as exc:
+                print(f"[mock-rda] control GUI unavailable ({exc}); running headless",
+                      file=sys.stderr)
+        if status_started.is_set():
+            stop_event.wait()  # status runs in its own thread; just await shutdown
+        elif not stop_event.is_set():
+            _status_loop()
     finally:
         print("[mock-rda] shutting down…", file=sys.stderr)
         server.stop()

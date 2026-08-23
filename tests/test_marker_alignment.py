@@ -33,6 +33,25 @@ def test_injection_queue_block_relative_offsets():
     assert len(q) == 0
 
 
+def test_burst_followers_resolved_relative_to_head():
+    q = InjectionQueue()
+    q.inject_burst(Marker(sample=AT_NEXT), [100, 200, 300, 400])
+    # The AT_NEXT head resolves to the first drained block's start; followers
+    # keep their exact spacing relative to that resolved sample.
+    assert [m.sample for m in q.drain_for_block(1000, 100)] == [1000]
+    assert len(q) == 4
+    assert [m.sample for m in q.drain_for_block(1100, 100)] == [1100]
+    assert [m.sample for m in q.drain_for_block(1200, 300)] == [1200, 1300, 1400]
+    assert len(q) == 0
+
+
+def test_burst_followers_within_same_block_emitted_at_once():
+    q = InjectionQueue()
+    q.inject_burst(Marker(sample=AT_NEXT), [10, 20])
+    assert [m.sample for m in q.drain_for_block(0, 100)] == [0, 10, 20]
+    assert len(q) == 0
+
+
 def test_late_injection_is_not_dropped():
     q = InjectionQueue()
     q.inject(Marker(sample=50))  # already-passed sample

@@ -23,10 +23,8 @@ container see the note at the bottom of ``README``/the plotting discussion.
 from __future__ import annotations
 
 import argparse
-import json
 import queue
 import signal
-import socket
 import sys
 import threading
 import time
@@ -35,21 +33,6 @@ import numpy as np
 from minimal_client import RDAClient
 
 from mock_rda.protocol import MsgType
-
-
-def send_inject(host: str, control_port: int, mtype: str, desc: str, timeout: float = 2.0) -> str:
-    """Send a one-line JSON inject command to the server control socket.
-
-    Returns a short human-readable status string (used by the GUI button).
-    """
-    cmd = json.dumps({"type": mtype, "description": desc, "at": "next"}) + "\n"
-    try:
-        with socket.create_connection((host, control_port), timeout=timeout) as s:
-            s.sendall(cmd.encode("utf-8"))
-            s.recv(64)
-        return f"injected {mtype}/{desc!r}"
-    except OSError as exc:
-        return f"inject failed ({exc}); is --control-port right?"
 
 
 # --------------------------------------------------------------------------- #
@@ -304,24 +287,6 @@ def run_gui(args):
     ttk.Checkbutton(ctrl, text="sync all y-limits", variable=sync_var,
                     command=lambda: redraw()).grid(row=2, column=0, columnspan=2, sticky="w")
 
-    status_var = tk.StringVar(value="")
-
-    def inject_trigger():
-        mtype = "Stimulus" if args.any_marker else args.trigger
-        desc = args.trigger_desc or "S  1"
-        status_var.set("injecting…")
-
-        def worker():
-            result = send_inject(args.host, args.control_port, mtype, desc)
-            root.after(0, lambda: status_var.set(result))
-
-        threading.Thread(target=worker, daemon=True).start()
-
-    ttk.Button(ctrl, text="Inject trigger", command=inject_trigger).grid(
-        row=3, column=0, columnspan=2, sticky="we", pady=(4, 0))
-    ttk.Label(ctrl, textvariable=status_var, foreground="#357").grid(
-        row=4, column=0, columnspan=2, sticky="w")
-
     bf_frame, bf_auto, bf_min, bf_max = limit_controls(panel, "butterfly y")
     el_frame, el_auto, el_min, el_max = limit_controls(panel, "electrode y")
     topo_frame, topo_auto, topo_min, topo_max = limit_controls(panel, "topomap color")
@@ -476,8 +441,6 @@ def main(argv=None):
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--host", default="127.0.0.1")
     ap.add_argument("--port", type=int, default=51244)
-    ap.add_argument("--control-port", type=int, default=51299,
-                    help="server control socket for the 'Inject trigger' button")
     ap.add_argument("--trigger", default="Stimulus",
                     help="marker type to wait for (default: Stimulus)")
     ap.add_argument("--trigger-desc", default=None,

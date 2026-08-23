@@ -3,7 +3,9 @@
 Three ways to inject, all writing to the same queue (drained once per block by
 the server):
 
-1. **Python API** — :meth:`Server.inject` / direct ``queue.inject(marker)``.
+1. **Python API** — :meth:`Server.inject` / :meth:`Server.inject_burst`, or
+   direct ``queue.inject(marker)``. The Tk control panel in :mod:`mock_rda.gui`
+   injects this way.
 2. **Control socket** — :class:`ControlSocketServer` accepts one-line JSON
    commands over TCP (default ``localhost:51299``).
 3. **Keypress** — :func:`keypress_loop`, used by the CLI.
@@ -11,9 +13,12 @@ the server):
 Control command schema (one JSON object per line)::
 
     {"type": "Stimulus", "description": "S  1", "points": 1,
-     "channel": -1, "at": "next" | <absolute_sample_int>}
+     "channel": -1, "at": "next" | <absolute_sample_int>,
+     "count": 1, "interval_ms": 20.0}
 
-All fields are optional except that ``at`` defaults to ``"next"``.
+All fields are optional except that ``at`` defaults to ``"next"``. A ``count``
+greater than 1 injects a burst: the marker plus ``count - 1`` copies spaced
+``interval_ms`` apart (the server must have been given its sample rate).
 """
 
 from __future__ import annotations
@@ -48,11 +53,13 @@ class ControlSocketServer:
         host: str = "127.0.0.1",
         port: int = 51299,
         on_inject=None,
+        sample_rate: float | None = None,
     ) -> None:
         self.queue = queue
         self.host = host
         self.port = port
         self.on_inject = on_inject
+        self.sample_rate = sample_rate  # needed to convert burst interval_ms to samples
         self._sock: socket.socket | None = None
         self._thread: threading.Thread | None = None
         self._stop = threading.Event()
@@ -104,13 +111,22 @@ class ControlSocketServer:
         try:
             cmd = json.loads(line.decode("utf-8"))
             marker = marker_from_command(cmd)
+            count = int(cmd.get("count", 1))
+            interval_ms = float(cmd.get("interval_ms", 20.0))
+            if count > 1 and (not self.sample_rate or interval_ms <= 0):
+                raise ValueError("burst needs a positive interval_ms and a "
+                                 "server-side sample rate")
         except (ValueError, TypeError) as exc:
             try:
                 conn.sendall(f'{{"error": "{exc}"}}\n'.encode())
             except OSError:
                 pass
             return
-        self.queue.inject(marker)
+        if count > 1:
+            isi = max(1, round(interval_ms * self.sample_rate / 1000.0))
+            self.queue.inject_burst(marker, [k * isi for k in range(1, count)])
+        else:
+            self.queue.inject(marker)
         if self.on_inject:
             self.on_inject(marker)
         try:

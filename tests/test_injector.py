@@ -47,6 +47,40 @@ def test_control_socket_injects_into_queue():
     assert 8900 in samples  # the "next" injection stamped at block start
 
 
+def test_control_socket_burst_command():
+    q = InjectionQueue()
+    server = ControlSocketServer(q, host="127.0.0.1", port=0, sample_rate=5000.0)
+    port = server.start()
+    try:
+        with socket.create_connection(("127.0.0.1", port), timeout=5) as sock:
+            sock.sendall(json.dumps({"count": 3, "interval_ms": 20, "at": 1000}).encode() + b"\n")
+            reply = sock.recv(256)
+            assert b'"ok"' in reply
+        deadline = time.monotonic() + 2
+        while len(q) < 1 and time.monotonic() < deadline:
+            time.sleep(0.01)
+    finally:
+        server.stop()
+
+    # 20 ms at 5 kHz = 100 samples between pulses.
+    drained = q.drain_for_block(0, 2000)
+    assert [m.sample for m in drained] == [1000, 1100, 1200]
+
+
+def test_control_socket_burst_needs_sample_rate():
+    q = InjectionQueue()
+    server = ControlSocketServer(q, host="127.0.0.1", port=0)  # no sample_rate
+    port = server.start()
+    try:
+        with socket.create_connection(("127.0.0.1", port), timeout=5) as sock:
+            sock.sendall(json.dumps({"count": 2}).encode() + b"\n")
+            reply = sock.recv(256)
+            assert b'"error"' in reply
+    finally:
+        server.stop()
+    assert len(q) == 0
+
+
 def test_control_socket_bad_json_reports_error():
     q = InjectionQueue()
     server = ControlSocketServer(q, host="127.0.0.1", port=0)

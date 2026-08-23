@@ -47,16 +47,24 @@ python examples/minimal_client.py --host 127.0.0.1 --port 51244
 
 ### Manual trigger injection
 
-Three paths, all feeding the same per-block queue:
+Four paths, all feeding the same per-block queue:
 
-1. **Keypress** — press <kbd>Enter</kbd> in the running CLI to fire a
+1. **Control GUI** — the server opens a small Tk window (disable with
+   `--no-gui`) with **Inject trigger** and **Inject burst** buttons plus a
+   live client/jitter status line. A burst is `--burst-count` pulses spaced
+   `--burst-isi` ms apart (default 5 × 20 ms = 50 Hz); both are editable in
+   the window. <kbd>Enter</kbd> in the window injects a single trigger.
+2. **Keypress** — press <kbd>Enter</kbd> in the running CLI to fire a
    `Stimulus` / `S  1` marker at the next block.
-2. **Control socket** — one-line JSON over TCP (default `localhost:51299`):
+3. **Control socket** — one-line JSON over TCP (default `localhost:51299`):
    ```bash
    echo '{"type":"Stimulus","description":"S  1","at":"next"}' | nc 127.0.0.1 51299
+   echo '{"count":5,"interval_ms":20}' | nc 127.0.0.1 51299   # burst
    ```
-   `at` is `"next"` or an absolute sample index.
-3. **Python API** — `server.inject(Marker(...))` for in-process tests.
+   `at` is `"next"` or an absolute sample index; a `count` > 1 injects a
+   burst spaced `interval_ms` apart.
+4. **Python API** — `server.inject(Marker(...))` /
+   `server.inject_burst(Marker(...), count, isi_ms)` for in-process tests.
 
 **Latency contract:** a marker requested at wall-clock *T* lands in the first
 block whose emission deadline is ≥ *T*, with `nPosition` computed from that
@@ -151,10 +159,11 @@ and a RecView/LSL-BrainVisionRDA smoke test.
 ```
 src/mock_rda/
   protocol.py     # GUID, enums, struct formats, encode_*/decode_*, RDAFramer (pure, no I/O)
-  markers.py      # Marker dataclass + thread-safe injection queue
+  markers.py      # Marker dataclass + thread-safe injection queue (single + burst)
   scheduler.py    # absolute-deadline block pacing with jitter tracking
   server.py       # TCP server: START, DATA32 loop, STOP, per-client tx threads
   injector.py     # control socket + keypress injection paths
+  gui.py          # Tk control panel: inject single/burst triggers, live status
   cli.py          # `mock-rda` entry point
   sources/        # base, synthetic (pink noise + TEP), file_source (.vhdr/.eeg/.vmrk)
 examples/

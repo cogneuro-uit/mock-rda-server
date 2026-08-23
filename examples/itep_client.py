@@ -2,7 +2,9 @@
 """Tkinter TMS/EMG epoch viewer — motor-cortex TEP + MEP monitoring.
 
 Waits for any marker (except ``New Segment``), then shows the pulse-locked
-window in five linked panels:
+window. Two display modes, switched with a button:
+
+**Single pulse mode** (default) — five linked panels:
 
 * **EMG** — a single channel (default ``EMG``) from -10 to 50 ms, for
   eyeballing the MEP.
@@ -13,9 +15,24 @@ window in five linked panels:
   panels.**
 * **TEP (long timescale)** — the same selected electrodes from -10 to 150 ms.
 
-A single y-scale (shared by every line panel and both topomap color scales)
+**Burst mode** — the stimulator fires a burst (default 5 pulses at 50 Hz,
+i.e. 20 ms apart) on each trigger. The first trigger locks the epoch; any
+further triggers inside the capture window never start a new epoch, but their
+actual arrival times are recorded. Expected pulse times are drawn as grey
+dotted lines, actually received triggers as red lines. Panels:
+
+* **EMG** — from the usual pre-window until 50 ms after the last *expected*
+  pulse.
+* **TEP (burst)** — selected electrodes from -2 ms (first pulse) until 20 ms
+  after the last pulse.
+* **Per-pulse butterfly** — each pulse's -2..10 ms segment overlaid, aligned
+  per pulse (actual trigger time when it arrived, expected time otherwise);
+  electrode = color, pulse order = shade, thick line = across-pulse average.
+* **One topomap per pulse** at a fixed post-pulse latency (default 3 ms).
+
+A single y-scale (shared by every line panel and all topomap color scales)
 is either set manually or computed automatically as the signal's min/max,
-excluding a small window around the pulse (default +/-2 ms, where the TMS
+excluding a small window around each pulse (default +/-2 ms, where the TMS
 artifact lives).
 
 Toolkits: Tkinter (Python stdlib) + matplotlib + MNE for the topomaps — same
@@ -35,7 +52,7 @@ import threading
 import time
 
 import numpy as np
-from gui_client import build_montage, flow_status, nearest_channel, send_inject
+from gui_client import build_montage, flow_status, nearest_channel
 from minimal_client import RDAClient
 
 from mock_rda.protocol import MsgType
@@ -78,11 +95,25 @@ def baseline_correct(epoch_uv, times_ms):
     return epoch_uv - epoch_uv[:, mask].mean(axis=1, keepdims=True)
 
 
-def auto_range_minmax(epoch_uv, times_ms, channel_idxs, exclude_ms=2.0):
-    """Min/max over the given channels, ignoring the +/-``exclude_ms`` artifact window."""
+def match_burst_triggers(actual_ms, expected_ms, tol_ms):
+    """Per expected pulse time, the nearest actual trigger within ``tol_ms``
+    of it — or the expected time itself when no trigger arrived."""
+    align = []
+    for t in expected_ms:
+        cands = [a for a in actual_ms if abs(a - t) <= tol_ms]
+        align.append(min(cands, key=lambda a: abs(a - t)) if cands else t)
+    return align
+
+
+def auto_range_minmax(epoch_uv, times_ms, channel_idxs, exclude_ms=2.0,
+                      trigger_times_ms=(0.0,)):
+    """Min/max over the given channels, ignoring the +/-``exclude_ms`` artifact
+    window around every trigger time."""
     if not channel_idxs:
         return (-1.0, 1.0)
-    mask = np.abs(times_ms) > exclude_ms
+    mask = np.ones_like(times_ms, dtype=bool)
+    for t in trigger_times_ms:
+        mask &= np.abs(times_ms - t) > exclude_ms
     if not mask.any():
         mask = np.ones_like(times_ms, dtype=bool)
     vals = epoch_uv[np.asarray(channel_idxs)][:, mask]
@@ -104,14 +135,18 @@ def _slice_range(times_ms, t0, t1):
 
 def epoch_stream_pre_post(msgs, pre_samples, post_samples, trigger_pred,
                           on_unmatched=None, on_data=None):
-    """Yield ``(epoch[n_ch, pre+post], marker)`` spanning ``pre_samples`` before to
-    ``post_samples`` after each triggering marker's absolute sample position.
+    """Yield ``(epoch[n_ch, pre+post], marker, trigger_offsets)`` spanning
+    ``pre_samples`` before to ``post_samples`` after each triggering marker's
+    absolute sample position.
 
     A rolling ``pre_samples``-long history buffer supplies the pre-trigger part
     even though DATA32 blocks only carry markers with a block-relative offset;
     the buffer is maintained every block regardless of capture state. Markers
-    arriving during an active capture are ignored (pulses are far apart
-    relative to the window).
+    arriving during an active capture never start a new epoch (pulses/bursts
+    are far apart relative to the window), but the sample offsets of those that
+    match ``trigger_pred`` are recorded and yielded as ``trigger_offsets``
+    (relative to the triggering marker, so the list always starts with 0) —
+    burst mode uses them to mark the actually received pulses.
     """
     history = None
     capturing = False
@@ -119,6 +154,7 @@ def epoch_stream_pre_post(msgs, pre_samples, post_samples, trigger_pred,
     have = 0
     pre_seg = None
     marker = None
+    offsets: list[int] = []
     for mtype, f in msgs:
         if mtype != MsgType.DATA32:
             continue
@@ -139,14 +175,25 @@ def epoch_stream_pre_post(msgs, pre_samples, post_samples, trigger_pred,
                     collected = [data[:, p:p + post_samples]]
                     have = collected[0].shape[1]
                     marker = m
+                    offsets = [0]
+                    for m2 in f["markers"]:
+                        off = m2["n_position"] - p
+                        if m2 is not m and trigger_pred(m2) and 0 < off < post_samples:
+                            offsets.append(off)
                     capturing = True
                     break
                 elif on_unmatched is not None and m["type"] != "New Segment":
                     on_unmatched(m)
-        elif have < post_samples:
-            take = min(post_samples - have, n)
-            collected.append(data[:, :take])
-            have += take
+        else:
+            base = have
+            for m in f["markers"]:
+                off = base + m["n_position"]
+                if trigger_pred(m) and off < post_samples:
+                    offsets.append(off)
+            if have < post_samples:
+                take = min(post_samples - have, n)
+                collected.append(data[:, :take])
+                have += take
         if pre_samples > 0:
             if n >= pre_samples:
                 history = data[:, -pre_samples:].copy()
@@ -154,7 +201,7 @@ def epoch_stream_pre_post(msgs, pre_samples, post_samples, trigger_pred,
                 history = np.concatenate([history[:, n:], data], axis=1)
         if capturing and have >= post_samples:
             post_arr = np.concatenate(collected, axis=1)[:, :post_samples]
-            yield np.concatenate([pre_seg, post_arr], axis=1), marker
+            yield np.concatenate([pre_seg, post_arr], axis=1), marker, sorted(offsets)
             capturing = False
 
 
@@ -162,21 +209,56 @@ def epoch_stream_pre_post(msgs, pre_samples, post_samples, trigger_pred,
 # Rendering (matplotlib only — works headless with Agg, testable)
 # --------------------------------------------------------------------------- #
 class ItepViewer:
-    """Owns the 5-panel figure and renders an epoch given explicit y-limits."""
+    """Owns the figure and renders an epoch given explicit y-limits.
+
+    Two layouts: ``"single"`` (the original 5-panel view) and ``"burst"``
+    (EMG on top, burst TEP + per-pulse butterfly in the middle, one topomap
+    per pulse below). Axes are rebuilt whenever the requested mode changes;
+    ``topo_axes`` always lists the clickable topomap axes of the current mode.
+    """
 
     def __init__(self, fig, eeg_names, pos, full_idx):
         self.fig = fig
         self.eeg_names = eeg_names
         self.pos = pos
         self.full_idx = full_idx
-        self.ax_emg = fig.add_subplot(2, 3, 1)
-        self.ax_topo1 = fig.add_subplot(2, 3, 2)
-        self.ax_topo2 = fig.add_subplot(2, 3, 3)
-        self.ax_short = fig.add_subplot(2, 3, 4)
-        self.ax_long = fig.add_subplot(2, 3, 5)
+        self.mode = None
+        self.topo_axes: list = []
+        self._build_axes("single")
+
+    def _build_axes(self, mode, n_topo=2):
+        self.fig.clear()
+        if mode == "single":
+            self.ax_emg = self.fig.add_subplot(2, 3, 1)
+            self.topo_axes = [self.fig.add_subplot(2, 3, 2), self.fig.add_subplot(2, 3, 3)]
+            self.ax_short = self.fig.add_subplot(2, 3, 4)
+            self.ax_long = self.fig.add_subplot(2, 3, 5)
+        else:
+            gs = self.fig.add_gridspec(3, n_topo)
+            self.ax_emg = self.fig.add_subplot(gs[0, :])
+            split = max(1, (3 * n_topo) // 5)
+            self.ax_tep = self.fig.add_subplot(gs[1, :split])
+            self.ax_fly = self.fig.add_subplot(gs[1, split:])
+            self.topo_axes = [self.fig.add_subplot(gs[2, i]) for i in range(n_topo)]
+        self.mode = mode
+
+    def _draw_topomap(self, ax, eeg_vals, selected, ylim, title):
+        ax.clear()
+        if self.eeg_names:
+            import mne
+            mask = np.array([n in selected for n in self.eeg_names])
+            mne.viz.plot_topomap(
+                eeg_vals, self.pos, axes=ax, show=False, vlim=ylim,
+                mask=mask, mask_params=dict(markersize=8, markerfacecolor="none",
+                                            markeredgecolor="k", markeredgewidth=1.5),
+                sensors=True, contours=4,
+            )
+        ax.set_title(title)
 
     def render(self, epoch_uv, times_ms, emg_idx, emg_name, selected,
               topo_latencies, emg_window, short_window, long_window, ylim):
+        if self.mode != "single":
+            self._build_axes("single")
         # --- EMG ---
         ax = self.ax_emg
         ax.clear()
@@ -191,19 +273,10 @@ class ItepViewer:
 
         # --- topomaps at fixed latencies ---
         eeg = epoch_uv[self.full_idx] if self.full_idx else np.empty((0, epoch_uv.shape[1]))
-        mask = np.array([n in selected for n in self.eeg_names])
-        for ax_t, lat in ((self.ax_topo1, topo_latencies[0]), (self.ax_topo2, topo_latencies[1])):
-            ax_t.clear()
-            if self.eeg_names:
-                import mne
-                t_idx = int(np.argmin(np.abs(times_ms - lat)))
-                mne.viz.plot_topomap(
-                    eeg[:, t_idx], self.pos, axes=ax_t, show=False, vlim=ylim,
-                    mask=mask, mask_params=dict(markersize=8, markerfacecolor="none",
-                                                markeredgecolor="k", markeredgewidth=1.5),
-                    sensors=True, contours=4,
-                )
-            ax_t.set_title(f"topomap @ {lat:g} ms\n(click to toggle)")
+        for ax_t, lat in zip(self.topo_axes, topo_latencies):
+            t_idx = int(np.argmin(np.abs(times_ms - lat)))
+            self._draw_topomap(ax_t, eeg[:, t_idx], selected, ylim,
+                               f"topomap @ {lat:g} ms\n(click to toggle)")
 
         # --- selected electrodes, early window ---
         ax = self.ax_short
@@ -245,6 +318,94 @@ class ItepViewer:
 
         self.fig.tight_layout()
 
+    def render_burst(self, epoch_uv, times_ms, emg_idx, emg_name, selected,
+                     expected_ms, actual_ms, align_ms, topo_lat,
+                     emg_window, tep_window, fly_window, ylim, sfreq):
+        """Burst layout: times are ms relative to the *first* pulse.
+
+        ``expected_ms`` are the nominal pulse times (grey dotted lines),
+        ``actual_ms`` the offsets of triggers that really arrived (red lines),
+        ``align_ms`` the per-pulse alignment times (actual when received,
+        expected otherwise) used for the butterfly panel and the topomaps.
+        """
+        if self.mode != "burst" or len(self.topo_axes) != len(expected_ms):
+            self._build_axes("burst", n_topo=len(expected_ms))
+
+        def pulse_lines(ax):
+            for t in expected_ms:
+                ax.axvline(t, color="0.6", lw=0.9, ls=":")
+            for t in actual_ms:
+                ax.axvline(t, color="red", lw=1.0, alpha=0.8)
+
+        # --- EMG until 50 ms after the last expected pulse ---
+        ax = self.ax_emg
+        ax.clear()
+        i0, i1 = _slice_range(times_ms, *emg_window)
+        ax.plot(times_ms[i0:i1], epoch_uv[emg_idx, i0:i1], lw=1.0, color="C1")
+        pulse_lines(ax)
+        ax.set_xlim(*emg_window)
+        ax.set_ylim(*ylim)
+        ax.set_xlabel("ms from first pulse")
+        ax.set_ylabel("µV")
+        ax.set_title(f"EMG ({emg_name}) — burst")
+
+        # --- TEP across the whole burst ---
+        ax = self.ax_tep
+        ax.clear()
+        i0, i1 = _slice_range(times_ms, *tep_window)
+        for name in sorted(selected):
+            if name in self.eeg_names:
+                idx = self.full_idx[self.eeg_names.index(name)]
+                ax.plot(times_ms[i0:i1], epoch_uv[idx, i0:i1], lw=1.2, label=name)
+        pulse_lines(ax)
+        ax.set_xlim(*tep_window)
+        ax.set_ylim(*ylim)
+        ax.set_xlabel("ms from first pulse")
+        ax.set_ylabel("µV")
+        ax.set_title("TEP (burst)")
+        if selected:
+            ax.legend(loc="upper right", fontsize=8)
+
+        # --- per-pulse butterfly: segments aligned to each pulse ---
+        ax = self.ax_fly
+        ax.clear()
+        n_seg = max(1, int(round((fly_window[1] - fly_window[0]) * sfreq / 1000.0)))
+        rel_ms = fly_window[0] + np.arange(n_seg) / sfreq * 1000.0
+        n_pulses = len(align_ms)
+        for ci, name in enumerate(sorted(selected)):
+            if name not in self.eeg_names:
+                continue
+            idx = self.full_idx[self.eeg_names.index(name)]
+            color = f"C{ci % 10}"
+            segs = []
+            for k, t_k in enumerate(align_ms):
+                j0 = int(np.searchsorted(times_ms, t_k + fly_window[0], side="left"))
+                seg = epoch_uv[idx, j0:j0 + n_seg]
+                if seg.shape[0] < n_seg:
+                    continue
+                segs.append(seg)
+                alpha = 0.25 + 0.55 * (k / max(1, n_pulses - 1))
+                ax.plot(rel_ms, seg, lw=0.9, color=color, alpha=alpha)
+            if segs:
+                ax.plot(rel_ms, np.mean(segs, axis=0), lw=2.2, color=color, label=name)
+        ax.axvline(0.0, color="k", lw=0.8, ls="--")
+        ax.set_xlim(*fly_window)
+        ax.set_ylim(*ylim)
+        ax.set_xlabel("ms from each pulse")
+        ax.set_ylabel("µV")
+        ax.set_title("per-pulse average (thick; faint = pulses 1..n)")
+        if selected:
+            ax.legend(loc="upper right", fontsize=8)
+
+        # --- one topomap per pulse ---
+        eeg = epoch_uv[self.full_idx] if self.full_idx else np.empty((0, epoch_uv.shape[1]))
+        for k, (ax_t, t_k) in enumerate(zip(self.topo_axes, align_ms)):
+            t_idx = int(np.argmin(np.abs(times_ms - (t_k + topo_lat))))
+            self._draw_topomap(ax_t, eeg[:, t_idx], selected, ylim,
+                               f"pulse {k + 1} +{topo_lat:g} ms")
+
+        self.fig.tight_layout()
+
 
 # --------------------------------------------------------------------------- #
 # Tk application
@@ -264,7 +425,19 @@ def run_gui(args):
     topo_latencies = parse_float_list(args.topo_latencies)
     if len(topo_latencies) != 2:
         raise SystemExit("--topo-latencies needs exactly two comma-separated values")
+
+    # Burst mode: expected pulse times relative to the first trigger, and the
+    # display windows derived from them. The capture window is the superset of
+    # both modes so a captured epoch can be re-rendered in either mode.
+    burst_expected = [k * args.burst_isi for k in range(args.burst_count)]
+    burst_last = burst_expected[-1]
+    burst_emg_window = (emg_window[0], burst_last + 50.0)
+    burst_tep_window = (short_window[0], burst_last + 20.0)
+    burst_topo_lat = topo_latencies[0]
+
     pre_ms, post_ms = capture_bounds(emg_window, short_window, long_window, topo_latencies)
+    post_ms = max(post_ms, burst_emg_window[1], burst_tep_window[1],
+                  burst_last + short_window[1], burst_last + burst_topo_lat)
 
     client = RDAClient(args.host, args.port)
     msgs = client.messages()
@@ -330,38 +503,37 @@ def run_gui(args):
 
     ctrl = ttk.Frame(panel)
     ctrl.pack(side=tk.LEFT, padx=6, pady=4)
-    status_var = tk.StringVar(value="")
 
-    def inject_trigger():
-        status_var.set("injecting…")
+    mode = {"value": "single"}
+    burst_label = f"burst ({args.burst_count} × {1000.0 / args.burst_isi:g} Hz)"
 
-        def worker():
-            result = send_inject(args.host, args.control_port, "Stimulus", "S  1")
-            root.after(0, lambda: status_var.set(result))
+    def toggle_mode():
+        mode["value"] = "burst" if mode["value"] == "single" else "single"
+        mode_btn.config(text="Mode: " + (burst_label if mode["value"] == "burst"
+                                         else "single pulse"))
+        redraw()
 
-        threading.Thread(target=worker, daemon=True).start()
-
-    ttk.Button(ctrl, text="Inject trigger", command=inject_trigger).grid(
-        row=0, column=0, sticky="we")
-    ttk.Label(ctrl, textvariable=status_var, foreground="#357").grid(
-        row=1, column=0, sticky="w")
+    mode_btn = ttk.Button(ctrl, text="Mode: single pulse", command=toggle_mode)
+    mode_btn.grid(row=0, column=0, sticky="we")
 
     state = {"epoch": None}
     flow = {"last": None, "blocks": 0, "interval": 0.02, "ended": False}
     new_epoch = queue.Queue(maxsize=1)
     redrawing = {"busy": False}
 
-    def compute_ylim(epoch_uv, times_ms):
+    def compute_ylim(epoch_uv, times_ms, trigger_times_ms):
         idxs = [emg_idx] + [full_idx[eeg_names.index(n)] for n in selected if n in eeg_names]
         if auto_var.get():
-            lo, hi = auto_range_minmax(epoch_uv, times_ms, idxs, exclude_ms=args.exclude_ms)
+            lo, hi = auto_range_minmax(epoch_uv, times_ms, idxs, exclude_ms=args.exclude_ms,
+                                       trigger_times_ms=trigger_times_ms)
             min_var.set(f"{lo:.1f}")
             max_var.set(f"{hi:.1f}")
             return lo, hi
         try:
             return float(min_var.get()), float(max_var.get())
         except ValueError:
-            return auto_range_minmax(epoch_uv, times_ms, idxs, exclude_ms=args.exclude_ms)
+            return auto_range_minmax(epoch_uv, times_ms, idxs, exclude_ms=args.exclude_ms,
+                                     trigger_times_ms=trigger_times_ms)
 
     def redraw():
         # Setting min/max StringVars below fires their write-traces, which call
@@ -377,19 +549,30 @@ def run_gui(args):
         finally:
             redrawing["busy"] = False
 
-    def _redraw_impl(epoch):
+    def _redraw_impl(item):
+        epoch, offsets = item
         epoch_uv = epoch * res[:, None]
         n = epoch_uv.shape[1]
         times_ms = (np.arange(n) - pre_samples) / sfreq * 1000.0
         epoch_uv = baseline_correct(epoch_uv, times_ms)
         sel_var.set("selected: " + (", ".join(sorted(selected)) if selected else "(none)"))
-        ylim = compute_ylim(epoch_uv, times_ms)
-        viewer.render(epoch_uv, times_ms, emg_idx, emg_name, selected, topo_latencies,
-                     emg_window, short_window, long_window, ylim)
+        if mode["value"] == "burst":
+            actual_ms = [o / sfreq * 1000.0 for o in offsets]
+            align_ms = match_burst_triggers(actual_ms, burst_expected,
+                                            tol_ms=args.burst_isi / 2.0)
+            ylim = compute_ylim(epoch_uv, times_ms, align_ms)
+            viewer.render_burst(epoch_uv, times_ms, emg_idx, emg_name, selected,
+                                burst_expected, actual_ms, align_ms, burst_topo_lat,
+                                burst_emg_window, burst_tep_window, short_window,
+                                ylim, sfreq)
+        else:
+            ylim = compute_ylim(epoch_uv, times_ms, [0.0])
+            viewer.render(epoch_uv, times_ms, emg_idx, emg_name, selected, topo_latencies,
+                         emg_window, short_window, long_window, ylim)
         canvas.draw_idle()
 
     def on_click(event):
-        for ax_t in (viewer.ax_topo1, viewer.ax_topo2):
+        for ax_t in viewer.topo_axes:
             if event.inaxes is ax_t and eeg_names and event.xdata is not None:
                 name = eeg_names[nearest_channel(pos, event.xdata, event.ydata)]
                 if name in selected:
@@ -411,9 +594,9 @@ def run_gui(args):
 
     def net_loop():
         trigger_pred = lambda m: m["type"] != "New Segment"  # react to all triggers
-        for epoch, _marker in epoch_stream_pre_post(msgs, pre_samples, post_samples,
-                                                     trigger_pred, on_data=on_data):
-            state["epoch"] = epoch
+        for epoch, _marker, offsets in epoch_stream_pre_post(msgs, pre_samples, post_samples,
+                                                             trigger_pred, on_data=on_data):
+            state["epoch"] = (epoch, offsets)
             if new_epoch.full():
                 try:
                     new_epoch.get_nowait()
@@ -468,8 +651,6 @@ def main(argv=None):
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--host", default="127.0.0.1")
     ap.add_argument("--port", type=int, default=51244)
-    ap.add_argument("--control-port", type=int, default=51299,
-                    help="server control socket for the 'Inject trigger' button")
     ap.add_argument("--emg-electrode", default="EMG", help="channel name for the EMG panel")
     ap.add_argument("--electrode", default="C3",
                     help="initially selected electrode for the TEP panels")
@@ -481,7 +662,11 @@ def main(argv=None):
     ap.add_argument("--long-window", default="-10,150",
                     help="ms range shown in the long-timescale TEP panel")
     ap.add_argument("--exclude-ms", type=float, default=2.0,
-                    help="auto y-scale ignores +/- this many ms around the pulse (the artifact)")
+                    help="auto y-scale ignores +/- this many ms around each pulse (the artifact)")
+    ap.add_argument("--burst-count", type=int, default=5,
+                    help="number of pulses per burst in burst mode")
+    ap.add_argument("--burst-isi", type=float, default=20.0,
+                    help="inter-pulse interval (ms) within a burst (20 ms = 50 Hz)")
     args = ap.parse_args(argv)
     run_gui(args)
 
