@@ -29,13 +29,14 @@ def format_duration(seconds: float) -> str:
 
 
 def format_bytes(n: float) -> str:
-    """Human-readable byte count (binary units, 3 significant-ish digits)."""
+    """Human-readable byte count in binary units, e.g. ``"1.8 MiB"``."""
     n = float(n)
-    for unit in ("B", "KiB", "MiB", "GiB"):
-        if abs(n) < 1024.0 or unit == "GiB":
-            return f"{n:.0f} {unit}" if unit == "B" else f"{n:.1f} {unit}"
+    if abs(n) < 1024.0:
+        return f"{n:.0f} B"
+    for unit in ("KiB", "MiB", "GiB"):
         n /= 1024.0
-    return f"{n:.1f} GiB"  # unreachable; keeps the return type obvious
+        if abs(n) < 1024.0 or unit == "GiB":
+            return f"{n:.1f} {unit}"
 
 
 def format_count(n: int) -> str:
