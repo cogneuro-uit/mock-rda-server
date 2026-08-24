@@ -4,16 +4,21 @@
 Waits for any marker (except ``New Segment``), then shows the pulse-locked
 window. Two display modes, switched with a button:
 
-**Single pulse mode** (default) — five linked panels:
+**Single pulse mode** (default) — six linked panels:
 
+* **Three topomaps** — scalp distribution at fixed post-pulse latencies
+  (default 2.3, 3.5 and 4.8 ms), sharing one colorbar. **Click a sensor to
+  toggle it in/out of the TEP panels.**
 * **EMG** — a single channel (default ``EMG``) from -10 to 50 ms, for
-  eyeballing the MEP.
-* **Selected electrodes (early)** — overlay of the selected EEG electrodes
-  from -2 to 10 ms.
-* **Two topomaps** — scalp distribution at two fixed post-pulse latencies
-  (default 3 and 4 ms). **Click a sensor to toggle it in/out of the TEP
-  panels.**
-* **TEP (long timescale)** — the same selected electrodes from -10 to 150 ms.
+  eyeballing the MEP, with reference lines at +/-25 µV (dotted) and
+  +/-50 µV (dashed).
+* **iTEP** — overlay of the selected EEG electrodes from -2 to 10 ms.
+* **GMFP** — global mean field power (spatial SD across all montage
+  electrodes), independent of which electrodes are selected.
+* **TEP** — the same selected electrodes from -10 to 150 ms.
+
+A checkbox applies a zero-phase Butterworth band-pass (default 0.1-2000 Hz,
+2nd order) to every channel before display, in both modes.
 
 **Burst mode** — the stimulator fires a burst (default 5 pulses at 50 Hz,
 i.e. 20 ms apart) on each trigger. The first trigger locks the epoch; any
@@ -93,6 +98,42 @@ def baseline_correct(epoch_uv, times_ms):
     if not mask.any():
         return epoch_uv
     return epoch_uv - epoch_uv[:, mask].mean(axis=1, keepdims=True)
+
+
+def butter_bandpass(epoch_uv, sfreq, lo=0.1, hi=2000.0, order=2):
+    """Zero-phase Butterworth band-pass, applied per channel.
+
+    ``order`` is the design order; :func:`~scipy.signal.sosfiltfilt` runs it
+    forwards and backwards, so the effective roll-off doubles while the phase
+    stays flat -- the point of filtering here, since a phase shift would move
+    the very latencies (2-5 ms) the topomaps are read at.
+
+    Second-order sections rather than transfer-function coefficients: at
+    5 kHz a 0.1 Hz corner sits at a normalized frequency of 4e-5, where the
+    ``ba`` form loses precision badly. ``hi`` is clamped below Nyquist so a
+    low-rate stream degrades to a plain high-pass instead of raising.
+    """
+    from scipy.signal import butter, sosfiltfilt
+
+    nyq = sfreq / 2.0
+    hi = min(hi, 0.99 * nyq)
+    n = epoch_uv.shape[1]
+    if lo <= 0 or hi <= lo or n < 3 * (2 * order + 1):
+        return epoch_uv
+    sos = butter(order, [lo / nyq, hi / nyq], btype="bandpass", output="sos")
+    return sosfiltfilt(sos, epoch_uv, axis=1)
+
+
+def gmfp(eeg_uv):
+    """Global mean field power: the spatial standard deviation across electrodes.
+
+    GMFP(t) = sqrt(mean_i (V_i(t) - mean(V(t)))^2) — one non-negative trace
+    summarising how much response there is anywhere on the scalp, independent
+    of which electrodes happen to be selected.
+    """
+    if eeg_uv.shape[0] == 0:
+        return np.zeros(eeg_uv.shape[1])
+    return eeg_uv.std(axis=0)
 
 
 def match_burst_triggers(actual_ms, expected_ms, tol_ms):
@@ -226,45 +267,66 @@ class ItepViewer:
         self.topo_axes: list = []
         self._build_axes("single")
 
-    def _build_axes(self, mode, n_topo=2):
+    def _build_axes(self, mode, n_topo=3):
         self.fig.clear()
+        self.cax = None
         if mode == "single":
-            self.ax_emg = self.fig.add_subplot(2, 3, 1)
-            self.topo_axes = [self.fig.add_subplot(2, 3, 2), self.fig.add_subplot(2, 3, 3)]
-            self.ax_short = self.fig.add_subplot(2, 3, 4)
-            self.ax_long = self.fig.add_subplot(2, 3, 5)
+            # Topomap row on top (plus a narrow colorbar column), EMG / iTEP /
+            # GMFP in the middle, the long TEP across the bottom. The grid is
+            # always >= 3 wide so the middle row's three panels fit regardless
+            # of how many topomap latencies were requested.
+            cols = max(3, n_topo)
+            gs = self.fig.add_gridspec(3, cols + 1, width_ratios=[*([1] * cols), 0.08])
+            self.topo_axes = [self.fig.add_subplot(gs[0, i]) for i in range(n_topo)]
+            self.cax = self.fig.add_subplot(gs[0, cols])
+            self.ax_emg = self.fig.add_subplot(gs[1, 0])
+            self.ax_short = self.fig.add_subplot(gs[1, 1])
+            self.ax_gmfp = self.fig.add_subplot(gs[1, 2])
+            self.ax_long = self.fig.add_subplot(gs[2, :cols])
         else:
-            gs = self.fig.add_gridspec(3, n_topo)
-            self.ax_emg = self.fig.add_subplot(gs[0, :])
+            gs = self.fig.add_gridspec(3, n_topo + 1,
+                                       width_ratios=[*([1] * n_topo), 0.08])
+            self.ax_emg = self.fig.add_subplot(gs[0, :n_topo])
             split = max(1, (3 * n_topo) // 5)
             self.ax_tep = self.fig.add_subplot(gs[1, :split])
-            self.ax_fly = self.fig.add_subplot(gs[1, split:])
+            self.ax_fly = self.fig.add_subplot(gs[1, split:n_topo])
             self.topo_axes = [self.fig.add_subplot(gs[2, i]) for i in range(n_topo)]
+            self.cax = self.fig.add_subplot(gs[2, n_topo])
         self.mode = mode
 
     def _draw_topomap(self, ax, eeg_vals, selected, ylim, title):
+        """Draw one topomap; returns the image (for a colorbar) or ``None``."""
         ax.clear()
+        im = None
         if self.eeg_names:
             import mne
             mask = np.array([n in selected for n in self.eeg_names])
-            mne.viz.plot_topomap(
+            im, _cn = mne.viz.plot_topomap(
                 eeg_vals, self.pos, axes=ax, show=False, vlim=ylim,
                 mask=mask, mask_params=dict(markersize=8, markerfacecolor="none",
                                             markeredgecolor="k", markeredgewidth=1.5),
                 sensors=True, contours=4,
             )
         ax.set_title(title)
+        return im
 
     def render(self, epoch_uv, times_ms, emg_idx, emg_name, selected,
-              topo_latencies, emg_window, short_window, long_window, ylim):
-        if self.mode != "single":
-            self._build_axes("single")
+              topo_latencies, emg_window, short_window, long_window, ylim,
+              emg_guides=(25.0, 50.0)):
+        if self.mode != "single" or len(self.topo_axes) != len(topo_latencies):
+            self._build_axes("single", n_topo=len(topo_latencies))
         # --- EMG ---
         ax = self.ax_emg
         ax.clear()
         i0, i1 = _slice_range(times_ms, *emg_window)
         ax.plot(times_ms[i0:i1], epoch_uv[emg_idx, i0:i1], lw=1.0, color="C1")
         ax.axvline(0.0, color="k", lw=0.8, ls="--")
+        # MEP amplitude references: dotted at the inner pair, dashed at the outer.
+        inner, outer = emg_guides
+        for v in (-inner, inner):
+            ax.axhline(v, color="0.6", lw=0.8, ls=":")
+        for v in (-outer, outer):
+            ax.axhline(v, color="0.6", lw=0.8, ls="--")
         ax.set_xlim(*emg_window)
         ax.set_ylim(*ylim)
         ax.set_xlabel("ms from pulse")
@@ -273,12 +335,20 @@ class ItepViewer:
 
         # --- topomaps at fixed latencies ---
         eeg = epoch_uv[self.full_idx] if self.full_idx else np.empty((0, epoch_uv.shape[1]))
-        for ax_t, lat in zip(self.topo_axes, topo_latencies):
+        im = None
+        for k, (ax_t, lat) in enumerate(zip(self.topo_axes, topo_latencies)):
             t_idx = int(np.argmin(np.abs(times_ms - lat)))
-            self._draw_topomap(ax_t, eeg[:, t_idx], selected, ylim,
-                               f"topomap @ {lat:g} ms\n(click to toggle)")
+            # The click hint belongs on the panel group, not on every map.
+            title = f"{lat:g} ms" + ("\n(click a sensor to toggle)" if k == 0 else "\n")
+            im = self._draw_topomap(ax_t, eeg[:, t_idx], selected, ylim, title) or im
+        if self.cax is not None:
+            self.cax.clear()
+            if im is not None:
+                self.fig.colorbar(im, cax=self.cax, label="µV")
+            else:
+                self.cax.set_axis_off()
 
-        # --- selected electrodes, early window ---
+        # --- selected electrodes, early window (iTEP) ---
         ax = self.ax_short
         ax.clear()
         i0, i1 = _slice_range(times_ms, *short_window)
@@ -293,11 +363,29 @@ class ItepViewer:
         ax.set_ylim(*ylim)
         ax.set_xlabel("ms from pulse")
         ax.set_ylabel("µV")
-        ax.set_title("selected electrodes (early)")
+        ax.set_title("iTEP")
         if selected:
             ax.legend(loc="upper right", fontsize=8)
 
-        # --- selected electrodes, long timescale ---
+        # --- GMFP across all EEG electrodes ---
+        ax = self.ax_gmfp
+        ax.clear()
+        i0, i1 = _slice_range(times_ms, *long_window)
+        g = gmfp(eeg)
+        ax.plot(times_ms[i0:i1], g[i0:i1], lw=1.2, color="C4")
+        ax.axvline(0.0, color="k", lw=0.8, ls="--")
+        for lat in topo_latencies:
+            ax.axvline(lat, color="0.6", lw=0.8, ls=":")
+        ax.set_xlim(*long_window)
+        # GMFP is non-negative, so the shared +/- y-scale would waste half the
+        # axis; scale it to its own peak instead.
+        peak = float(g[i0:i1].max()) if i1 > i0 and g.size else 1.0
+        ax.set_ylim(0.0, peak * 1.1 if peak > 0 else 1.0)
+        ax.set_xlabel("ms from pulse")
+        ax.set_ylabel("µV")
+        ax.set_title(f"GMFP ({len(self.eeg_names)} ch)")
+
+        # --- selected electrodes, long timescale (TEP) ---
         ax = self.ax_long
         ax.clear()
         i0, i1 = _slice_range(times_ms, *long_window)
@@ -312,7 +400,7 @@ class ItepViewer:
         ax.set_ylim(*ylim)
         ax.set_xlabel("ms from pulse")
         ax.set_ylabel("µV")
-        ax.set_title("TEP (long timescale)")
+        ax.set_title("TEP")
         if selected:
             ax.legend(loc="upper right", fontsize=8)
 
@@ -320,7 +408,8 @@ class ItepViewer:
 
     def render_burst(self, epoch_uv, times_ms, emg_idx, emg_name, selected,
                      expected_ms, actual_ms, align_ms, topo_lat,
-                     emg_window, tep_window, fly_window, ylim, sfreq):
+                     emg_window, tep_window, fly_window, ylim, sfreq,
+                     emg_guides=(25.0, 50.0)):
         """Burst layout: times are ms relative to the *first* pulse.
 
         ``expected_ms`` are the nominal pulse times (grey dotted lines),
@@ -343,6 +432,11 @@ class ItepViewer:
         i0, i1 = _slice_range(times_ms, *emg_window)
         ax.plot(times_ms[i0:i1], epoch_uv[emg_idx, i0:i1], lw=1.0, color="C1")
         pulse_lines(ax)
+        inner, outer = emg_guides
+        for v in (-inner, inner):
+            ax.axhline(v, color="0.6", lw=0.8, ls=":")
+        for v in (-outer, outer):
+            ax.axhline(v, color="0.6", lw=0.8, ls="--")
         ax.set_xlim(*emg_window)
         ax.set_ylim(*ylim)
         ax.set_xlabel("ms from first pulse")
@@ -399,10 +493,17 @@ class ItepViewer:
 
         # --- one topomap per pulse ---
         eeg = epoch_uv[self.full_idx] if self.full_idx else np.empty((0, epoch_uv.shape[1]))
+        im = None
         for k, (ax_t, t_k) in enumerate(zip(self.topo_axes, align_ms)):
             t_idx = int(np.argmin(np.abs(times_ms - (t_k + topo_lat))))
-            self._draw_topomap(ax_t, eeg[:, t_idx], selected, ylim,
-                               f"pulse {k + 1} +{topo_lat:g} ms")
+            im = self._draw_topomap(ax_t, eeg[:, t_idx], selected, ylim,
+                                    f"pulse {k + 1} +{topo_lat:g} ms") or im
+        if self.cax is not None:
+            self.cax.clear()
+            if im is not None:
+                self.fig.colorbar(im, cax=self.cax, label="µV")
+            else:
+                self.cax.set_axis_off()
 
         self.fig.tight_layout()
 
@@ -423,8 +524,11 @@ def run_gui(args):
     short_window = parse_ms_range(args.short_window)
     long_window = parse_ms_range(args.long_window)
     topo_latencies = parse_float_list(args.topo_latencies)
-    if len(topo_latencies) != 2:
-        raise SystemExit("--topo-latencies needs exactly two comma-separated values")
+    if not topo_latencies:
+        raise SystemExit("--topo-latencies needs at least one value")
+    emg_guides = tuple(sorted(parse_float_list(args.emg_guides)))
+    if len(emg_guides) != 2:
+        raise SystemExit("--emg-guides needs exactly two comma-separated values")
 
     # Burst mode: expected pulse times relative to the first trigger, and the
     # display windows derived from them. The capture window is the superset of
@@ -433,7 +537,7 @@ def run_gui(args):
     burst_last = burst_expected[-1]
     burst_emg_window = (emg_window[0], burst_last + 50.0)
     burst_tep_window = (short_window[0], burst_last + 20.0)
-    burst_topo_lat = topo_latencies[0]
+    burst_topo_lat = args.burst_topo_latency
 
     pre_ms, post_ms = capture_bounds(emg_window, short_window, long_window, topo_latencies)
     post_ms = max(post_ms, burst_emg_window[1], burst_tep_window[1],
@@ -501,6 +605,15 @@ def run_gui(args):
     ttk.Label(scale, text="max").grid(row=2, column=0)
     ttk.Entry(scale, textvariable=max_var, width=7).grid(row=2, column=1)
 
+    filt = ttk.LabelFrame(panel, text="filter")
+    filt.pack(side=tk.LEFT, padx=6, pady=4)
+    filter_var = tk.BooleanVar(value=args.filter)
+    ttk.Checkbutton(filt, text=f"{args.filter_low:g}–{args.filter_high:g} Hz Butterworth",
+                    variable=filter_var, command=lambda: redraw()).grid(
+        row=0, column=0, sticky="w")
+    ttk.Label(filt, text=f"order {args.filter_order}, zero-phase").grid(
+        row=1, column=0, sticky="w")
+
     ctrl = ttk.Frame(panel)
     ctrl.pack(side=tk.LEFT, padx=6, pady=4)
 
@@ -554,6 +667,11 @@ def run_gui(args):
         epoch_uv = epoch * res[:, None]
         n = epoch_uv.shape[1]
         times_ms = (np.arange(n) - pre_samples) / sfreq * 1000.0
+        # Filter before baselining: the band-pass can shift the trace level, so
+        # the pre-trigger mean must be taken from what is actually displayed.
+        if filter_var.get():
+            epoch_uv = butter_bandpass(epoch_uv, sfreq, args.filter_low,
+                                       args.filter_high, args.filter_order)
         epoch_uv = baseline_correct(epoch_uv, times_ms)
         sel_var.set("selected: " + (", ".join(sorted(selected)) if selected else "(none)"))
         if mode["value"] == "burst":
@@ -564,11 +682,12 @@ def run_gui(args):
             viewer.render_burst(epoch_uv, times_ms, emg_idx, emg_name, selected,
                                 burst_expected, actual_ms, align_ms, burst_topo_lat,
                                 burst_emg_window, burst_tep_window, short_window,
-                                ylim, sfreq)
+                                ylim, sfreq, emg_guides=emg_guides)
         else:
             ylim = compute_ylim(epoch_uv, times_ms, [0.0])
             viewer.render(epoch_uv, times_ms, emg_idx, emg_name, selected, topo_latencies,
-                         emg_window, short_window, long_window, ylim)
+                         emg_window, short_window, long_window, ylim,
+                         emg_guides=emg_guides)
         canvas.draw_idle()
 
     def on_click(event):
@@ -654,8 +773,22 @@ def main(argv=None):
     ap.add_argument("--emg-electrode", default="EMG", help="channel name for the EMG panel")
     ap.add_argument("--electrode", default="C3",
                     help="initially selected electrode for the TEP panels")
-    ap.add_argument("--topo-latencies", default="3,4",
-                    help="two comma-separated post-pulse latencies (ms) for the topomaps")
+    ap.add_argument("--topo-latencies", default="2.3,3.5,4.8",
+                    help="comma-separated post-pulse latencies (ms) for the "
+                         "single-pulse topomaps")
+    ap.add_argument("--burst-topo-latency", type=float, default=3.0,
+                    help="post-pulse latency (ms) for burst mode's per-pulse topomaps")
+    ap.add_argument("--emg-guides", default="25,50",
+                    help="two amplitudes (µV) for the EMG reference lines; the "
+                         "inner pair is dotted, the outer dashed")
+    ap.add_argument("--filter", action=argparse.BooleanOptionalAction, default=False,
+                    help="start with the band-pass filter enabled (toggleable in the GUI)")
+    ap.add_argument("--filter-low", type=float, default=0.1,
+                    help="band-pass low cutoff in Hz")
+    ap.add_argument("--filter-high", type=float, default=2000.0,
+                    help="band-pass high cutoff in Hz (clamped below Nyquist)")
+    ap.add_argument("--filter-order", type=int, default=2,
+                    help="Butterworth design order (zero-phase doubles the roll-off)")
     ap.add_argument("--emg-window", default="-10,50", help="ms range shown in the EMG panel")
     ap.add_argument("--short-window", default="-2,10",
                     help="ms range shown in the early TEP panel")
