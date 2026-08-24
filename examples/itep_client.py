@@ -17,8 +17,9 @@ window. Two display modes, switched with a button:
   electrodes), independent of which electrodes are selected.
 * **TEP** — the same selected electrodes from -10 to 150 ms.
 
-A checkbox applies a zero-phase Butterworth band-pass (default 0.1-2000 Hz,
-2nd order) to every channel before display, in both modes.
+Signals are shown unfiltered apart from per-channel baseline correction: a
+band-pass worth having needs seconds of data either side of the epoch, which
+would cost the same in display latency. Filter post-hoc in analysis instead.
 
 **Burst mode** — the stimulator fires a burst (default 5 pulses at 50 Hz,
 i.e. 20 ms apart) on each trigger. The first trigger locks the epoch; any
@@ -98,30 +99,6 @@ def baseline_correct(epoch_uv, times_ms):
     if not mask.any():
         return epoch_uv
     return epoch_uv - epoch_uv[:, mask].mean(axis=1, keepdims=True)
-
-
-def butter_bandpass(epoch_uv, sfreq, lo=0.1, hi=2000.0, order=2):
-    """Zero-phase Butterworth band-pass, applied per channel.
-
-    ``order`` is the design order; :func:`~scipy.signal.sosfiltfilt` runs it
-    forwards and backwards, so the effective roll-off doubles while the phase
-    stays flat -- the point of filtering here, since a phase shift would move
-    the very latencies (2-5 ms) the topomaps are read at.
-
-    Second-order sections rather than transfer-function coefficients: at
-    5 kHz a 0.1 Hz corner sits at a normalized frequency of 4e-5, where the
-    ``ba`` form loses precision badly. ``hi`` is clamped below Nyquist so a
-    low-rate stream degrades to a plain high-pass instead of raising.
-    """
-    from scipy.signal import butter, sosfiltfilt
-
-    nyq = sfreq / 2.0
-    hi = min(hi, 0.99 * nyq)
-    n = epoch_uv.shape[1]
-    if lo <= 0 or hi <= lo or n < 3 * (2 * order + 1):
-        return epoch_uv
-    sos = butter(order, [lo / nyq, hi / nyq], btype="bandpass", output="sos")
-    return sosfiltfilt(sos, epoch_uv, axis=1)
 
 
 def gmfp(eeg_uv):
@@ -605,15 +582,6 @@ def run_gui(args):
     ttk.Label(scale, text="max").grid(row=2, column=0)
     ttk.Entry(scale, textvariable=max_var, width=7).grid(row=2, column=1)
 
-    filt = ttk.LabelFrame(panel, text="filter")
-    filt.pack(side=tk.LEFT, padx=6, pady=4)
-    filter_var = tk.BooleanVar(value=args.filter)
-    ttk.Checkbutton(filt, text=f"{args.filter_low:g}–{args.filter_high:g} Hz Butterworth",
-                    variable=filter_var, command=lambda: redraw()).grid(
-        row=0, column=0, sticky="w")
-    ttk.Label(filt, text=f"order {args.filter_order}, zero-phase").grid(
-        row=1, column=0, sticky="w")
-
     ctrl = ttk.Frame(panel)
     ctrl.pack(side=tk.LEFT, padx=6, pady=4)
 
@@ -667,11 +635,6 @@ def run_gui(args):
         epoch_uv = epoch * res[:, None]
         n = epoch_uv.shape[1]
         times_ms = (np.arange(n) - pre_samples) / sfreq * 1000.0
-        # Filter before baselining: the band-pass can shift the trace level, so
-        # the pre-trigger mean must be taken from what is actually displayed.
-        if filter_var.get():
-            epoch_uv = butter_bandpass(epoch_uv, sfreq, args.filter_low,
-                                       args.filter_high, args.filter_order)
         epoch_uv = baseline_correct(epoch_uv, times_ms)
         sel_var.set("selected: " + (", ".join(sorted(selected)) if selected else "(none)"))
         if mode["value"] == "burst":
@@ -781,14 +744,6 @@ def main(argv=None):
     ap.add_argument("--emg-guides", default="25,50",
                     help="two amplitudes (µV) for the EMG reference lines; the "
                          "inner pair is dotted, the outer dashed")
-    ap.add_argument("--filter", action=argparse.BooleanOptionalAction, default=False,
-                    help="start with the band-pass filter enabled (toggleable in the GUI)")
-    ap.add_argument("--filter-low", type=float, default=0.1,
-                    help="band-pass low cutoff in Hz")
-    ap.add_argument("--filter-high", type=float, default=2000.0,
-                    help="band-pass high cutoff in Hz (clamped below Nyquist)")
-    ap.add_argument("--filter-order", type=int, default=2,
-                    help="Butterworth design order (zero-phase doubles the roll-off)")
     ap.add_argument("--emg-window", default="-10,50", help="ms range shown in the EMG panel")
     ap.add_argument("--short-window", default="-2,10",
                     help="ms range shown in the early TEP panel")
