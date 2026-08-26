@@ -9,9 +9,10 @@ window. Two display modes, switched with a button:
 * **Three topomaps** — scalp distribution at fixed post-pulse latencies
   (default 2.3, 3.5 and 4.8 ms), sharing one colorbar. **Click a sensor to
   toggle it in/out of the TEP panels.**
-* **EMG** — a single channel (default ``EMG``) from -10 to 50 ms, for
-  eyeballing the MEP, with reference lines at +/-25 µV (dotted) and
-  +/-50 µV (dashed).
+* **EMG** — every EMG channel (default: any named ``EMG*``, so a second
+  electrode ``EMG2`` appears automatically) from -10 to 50 ms, for eyeballing
+  the MEP; one colour per channel with a legend, plus reference lines at
+  +/-25 µV (dotted) and +/-50 µV (dashed).
 * **iTEP** — overlay of the selected EEG electrodes from -2 to 10 ms.
 * **GMFP** — global mean field power (spatial SD across all montage
   electrodes), independent of which electrodes are selected.
@@ -27,8 +28,8 @@ further triggers inside the capture window never start a new epoch, but their
 actual arrival times are recorded. Expected pulse times are drawn as grey
 dotted lines, actually received triggers as red lines. Panels:
 
-* **EMG** — from the usual pre-window until 50 ms after the last *expected*
-  pulse.
+* **EMG** — every EMG channel, from the usual pre-window until 50 ms after
+  the last *expected* pulse.
 * **TEP (burst)** — selected electrodes from -2 ms (first pulse) until 20 ms
   after the last pulse.
 * **Per-pulse butterfly** — each pulse's -2..10 ms segment overlaid, aligned
@@ -45,7 +46,7 @@ Toolkits: Tkinter (Python stdlib) + matplotlib + MNE for the topomaps — same
 dependencies as ``gui_client.py``, which this module reuses for the montage
 lookup and the data-flow indicator.
 
-    python examples/itep_client.py --emg-electrode EMG --electrode C3
+    python examples/itep_client.py --emg-electrodes 'EMG*' --electrode C3
 """
 
 from __future__ import annotations
@@ -76,6 +77,26 @@ def parse_ms_range(s: str) -> tuple[float, float]:
 def parse_float_list(s: str) -> list[float]:
     """Parse ``"3,4"`` into ``[3.0, 4.0]``."""
     return [float(x) for x in s.split(",")]
+
+
+def resolve_emg_channels(channel_names, spec="EMG*"):
+    """``[(index, name), ...]`` for every channel matching ``spec``.
+
+    ``spec`` is a comma-separated list of channel names or glob patterns. The
+    default ``EMG*`` picks up ``EMG``, ``EMG2``, ``EMG3``... so adding a second
+    electrode to the montage needs no command-line change, while a single-EMG
+    setup keeps working unchanged.
+
+    Matching is case-insensitive and platform-independent (``fnmatchcase`` on
+    pre-lowered strings -- plain ``fnmatch`` would fold case on Windows only).
+    Results stay in acquisition order; a channel matched by several patterns
+    appears once.
+    """
+    import fnmatch
+
+    pats = [p.strip().lower() for p in spec.split(",") if p.strip()]
+    return [(i, name) for i, name in enumerate(channel_names)
+            if any(fnmatch.fnmatchcase(name.lower(), p) for p in pats)]
 
 
 def capture_bounds(emg_window, short_window, long_window, topo_latencies):
@@ -287,28 +308,44 @@ class ItepViewer:
         ax.set_title(title)
         return im
 
-    def render(self, epoch_uv, times_ms, emg_idx, emg_name, selected,
-              topo_latencies, emg_window, short_window, long_window, ylim,
-              emg_guides=(25.0, 50.0)):
-        if self.mode != "single" or len(self.topo_axes) != len(topo_latencies):
-            self._build_axes("single", n_topo=len(topo_latencies))
-        # --- EMG ---
-        ax = self.ax_emg
+    def _draw_emg(self, ax, epoch_uv, times_ms, emg_channels, window, ylim,
+                  emg_guides, title, mark_lines=None):
+        """EMG panel: one coloured trace per EMG channel, with a legend.
+
+        Colours start at C1 so a single-EMG setup keeps the orange trace it
+        had before a second electrode was added.
+        """
         ax.clear()
-        i0, i1 = _slice_range(times_ms, *emg_window)
-        ax.plot(times_ms[i0:i1], epoch_uv[emg_idx, i0:i1], lw=1.0, color="C1")
-        ax.axvline(0.0, color="k", lw=0.8, ls="--")
+        i0, i1 = _slice_range(times_ms, *window)
+        for k, (idx, name) in enumerate(emg_channels):
+            ax.plot(times_ms[i0:i1], epoch_uv[idx, i0:i1], lw=1.0,
+                    color=f"C{(1 + k) % 10}", label=name)
+        if mark_lines is not None:
+            mark_lines(ax)
+        else:
+            ax.axvline(0.0, color="k", lw=0.8, ls="--")
         # MEP amplitude references: dotted at the inner pair, dashed at the outer.
         inner, outer = emg_guides
         for v in (-inner, inner):
             ax.axhline(v, color="0.6", lw=0.8, ls=":")
         for v in (-outer, outer):
             ax.axhline(v, color="0.6", lw=0.8, ls="--")
-        ax.set_xlim(*emg_window)
+        ax.set_xlim(*window)
         ax.set_ylim(*ylim)
-        ax.set_xlabel("ms from pulse")
         ax.set_ylabel("µV")
-        ax.set_title(f"EMG ({emg_name})")
+        ax.set_title(title)
+        if emg_channels:
+            ax.legend(loc="upper right", fontsize=8)
+
+    def render(self, epoch_uv, times_ms, emg_channels, selected,
+              topo_latencies, emg_window, short_window, long_window, ylim,
+              emg_guides=(25.0, 50.0)):
+        if self.mode != "single" or len(self.topo_axes) != len(topo_latencies):
+            self._build_axes("single", n_topo=len(topo_latencies))
+        # --- EMG ---
+        self._draw_emg(self.ax_emg, epoch_uv, times_ms, emg_channels,
+                       emg_window, ylim, emg_guides, "EMG")
+        self.ax_emg.set_xlabel("ms from pulse")
 
         # --- topomaps at fixed latencies ---
         eeg = epoch_uv[self.full_idx] if self.full_idx else np.empty((0, epoch_uv.shape[1]))
@@ -383,7 +420,7 @@ class ItepViewer:
 
         self.fig.tight_layout()
 
-    def render_burst(self, epoch_uv, times_ms, emg_idx, emg_name, selected,
+    def render_burst(self, epoch_uv, times_ms, emg_channels, selected,
                      expected_ms, actual_ms, align_ms, topo_lat,
                      emg_window, tep_window, fly_window, ylim, sfreq,
                      emg_guides=(25.0, 50.0)):
@@ -404,21 +441,10 @@ class ItepViewer:
                 ax.axvline(t, color="red", lw=1.0, alpha=0.8)
 
         # --- EMG until 50 ms after the last expected pulse ---
-        ax = self.ax_emg
-        ax.clear()
-        i0, i1 = _slice_range(times_ms, *emg_window)
-        ax.plot(times_ms[i0:i1], epoch_uv[emg_idx, i0:i1], lw=1.0, color="C1")
-        pulse_lines(ax)
-        inner, outer = emg_guides
-        for v in (-inner, inner):
-            ax.axhline(v, color="0.6", lw=0.8, ls=":")
-        for v in (-outer, outer):
-            ax.axhline(v, color="0.6", lw=0.8, ls="--")
-        ax.set_xlim(*emg_window)
-        ax.set_ylim(*ylim)
-        ax.set_xlabel("ms from first pulse")
-        ax.set_ylabel("µV")
-        ax.set_title(f"EMG ({emg_name}) — burst")
+        self._draw_emg(self.ax_emg, epoch_uv, times_ms, emg_channels,
+                       emg_window, ylim, emg_guides, "EMG — burst",
+                       mark_lines=pulse_lines)
+        self.ax_emg.set_xlabel("ms from first pulse")
 
         # --- TEP across the whole burst ---
         ax = self.ax_tep
@@ -535,14 +561,13 @@ def run_gui(args):
     eeg_names, pos, full_idx = build_montage(channel_names, sfreq)
     default_electrode = args.electrode if args.electrode in eeg_names else (
         eeg_names[0] if eeg_names else channel_names[0])
-    if args.emg_electrode in channel_names:
-        emg_idx = channel_names.index(args.emg_electrode)
-        emg_name = args.emg_electrode
-    else:
-        print(f"warning: EMG channel {args.emg_electrode!r} not found; "
+    emg_channels = resolve_emg_channels(channel_names, args.emg_electrodes)
+    if not emg_channels:
+        print(f"warning: no channel matches {args.emg_electrodes!r}; "
               f"using {channel_names[0]!r} instead", file=sys.stderr)
-        emg_idx = 0
-        emg_name = channel_names[0]
+        emg_channels = [(0, channel_names[0])]
+    emg_idxs = [i for i, _n in emg_channels]
+    print(f"EMG channels: {', '.join(n for _i, n in emg_channels)}", file=sys.stderr)
 
     pre_samples = int(round(pre_ms * sfreq / 1000.0))
     post_samples = max(1, int(round(post_ms * sfreq / 1000.0)))
@@ -567,7 +592,8 @@ def run_gui(args):
 
     info = ttk.Frame(panel)
     info.pack(side=tk.LEFT, padx=6, pady=4)
-    ttk.Label(info, text=f"EMG channel: {emg_name}").grid(row=0, column=0, sticky="w")
+    ttk.Label(info, text="EMG: " + ", ".join(n for _i, n in emg_channels)).grid(
+        row=0, column=0, sticky="w")
     ttk.Label(info, textvariable=sel_var).grid(row=1, column=0, sticky="w")
 
     scale = ttk.LabelFrame(panel, text="y-scale (all panels)")
@@ -603,7 +629,7 @@ def run_gui(args):
     redrawing = {"busy": False}
 
     def compute_ylim(epoch_uv, times_ms, trigger_times_ms):
-        idxs = [emg_idx] + [full_idx[eeg_names.index(n)] for n in selected if n in eeg_names]
+        idxs = emg_idxs + [full_idx[eeg_names.index(n)] for n in selected if n in eeg_names]
         if auto_var.get():
             lo, hi = auto_range_minmax(epoch_uv, times_ms, idxs, exclude_ms=args.exclude_ms,
                                        trigger_times_ms=trigger_times_ms)
@@ -642,13 +668,13 @@ def run_gui(args):
             align_ms = match_burst_triggers(actual_ms, burst_expected,
                                             tol_ms=args.burst_isi / 2.0)
             ylim = compute_ylim(epoch_uv, times_ms, align_ms)
-            viewer.render_burst(epoch_uv, times_ms, emg_idx, emg_name, selected,
+            viewer.render_burst(epoch_uv, times_ms, emg_channels, selected,
                                 burst_expected, actual_ms, align_ms, burst_topo_lat,
                                 burst_emg_window, burst_tep_window, short_window,
                                 ylim, sfreq, emg_guides=emg_guides)
         else:
             ylim = compute_ylim(epoch_uv, times_ms, [0.0])
-            viewer.render(epoch_uv, times_ms, emg_idx, emg_name, selected, topo_latencies,
+            viewer.render(epoch_uv, times_ms, emg_channels, selected, topo_latencies,
                          emg_window, short_window, long_window, ylim,
                          emg_guides=emg_guides)
         canvas.draw_idle()
@@ -733,7 +759,10 @@ def main(argv=None):
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--host", default="127.0.0.1")
     ap.add_argument("--port", type=int, default=51244)
-    ap.add_argument("--emg-electrode", default="EMG", help="channel name for the EMG panel")
+    ap.add_argument("--emg-electrodes", "--emg-electrode", dest="emg_electrodes",
+                    default="EMG*",
+                    help="comma-separated channel names or globs for the EMG panel; "
+                         "the default 'EMG*' shows EMG, EMG2, ... automatically")
     ap.add_argument("--electrode", default="C3",
                     help="initially selected electrode for the TEP panels")
     ap.add_argument("--topo-latencies", default="2.3,3.5,4.8",
