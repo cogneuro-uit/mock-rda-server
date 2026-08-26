@@ -67,6 +67,11 @@ def _resolve_names(n_channels: int, names: list[str] | None) -> list[str]:
     return out
 
 
+def default_channel_names(n_channels: int) -> list[str]:
+    """The built-in 10-20 style names used when no explicit list is given."""
+    return _resolve_names(n_channels, None)
+
+
 class SyntheticSource(SourceBase):
     """Continuous synthetic EEG with scheduled and injectable evoked responses."""
 

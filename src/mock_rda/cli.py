@@ -22,7 +22,8 @@ import time
 from .injector import ControlSocketServer, keypress_loop
 from .markers import Marker
 from .server import RDA_FLOAT_PORT, Server
-from .sources import FileSource, SyntheticSource, TEPTemplate
+from .sources import (FileSource, SyntheticSource, TEPTemplate,
+                      default_channel_names)
 
 
 def _block_points(sample_rate: float, block_ms: float) -> int:
@@ -40,8 +41,16 @@ def _build_source(args) -> FileSource | SyntheticSource:
         return source
     tep = TEPTemplate() if args.tep_template != "none" else None
     bp = _block_points(args.rate, args.block_ms)
+    # EMG channels are appended after the EEG ones and named EMG, EMG2, ... so
+    # a client globbing "EMG*" picks them all up.
+    emg_names = ([] if args.emg_channels <= 0 else
+                 ["EMG"] + [f"EMG{i}" for i in range(2, args.emg_channels + 1)])
+    names = default_channel_names(args.channels) + emg_names
+    if emg_names:
+        print(f"[mock-rda] EMG channels: {', '.join(emg_names)}", file=sys.stderr)
     return SyntheticSource(
-        n_channels=args.channels,
+        n_channels=len(names),
+        channel_names=names,
         sample_rate=args.rate,
         block_points=bp,
         seed=args.seed,
@@ -79,7 +88,10 @@ def _parse_args(argv):
     pf.add_argument("--loop", action="store_true", help="repeat the file seamlessly")
 
     ps = sub.add_parser("synth", parents=[common], help="stream a synthetic source")
-    ps.add_argument("--channels", type=int, default=32)
+    ps.add_argument("--channels", type=int, default=32,
+                    help="number of EEG channels (EMG channels are added on top)")
+    ps.add_argument("--emg-channels", type=int, default=0,
+                    help="append this many EMG channels, named EMG, EMG2, ...")
     ps.add_argument("--rate", type=float, default=5000.0)
     ps.add_argument("--seed", type=int, default=0)
     ps.add_argument("--stim-period", type=float, default=None,
