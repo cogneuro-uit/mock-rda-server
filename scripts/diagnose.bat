@@ -84,10 +84,9 @@ echo      fresh install are often slow and the block can be transient.
 echo   2. Ask IT to add an antivirus exclusion for the folder:
 echo      %CD%
 echo      then re-run install.bat (it restores quarantined files).
-echo   3. If step [5] listed a system Python 3.12, bootstrap against it
-echo      instead of the managed one:
-echo      set UV_PYTHON_PREFERENCE=system
-echo      install.bat
+echo   3. If step [5] listed a system Python 3.12 (check "py --version"),
+echo      bootstrap against it instead of the managed one:
+echo      install.bat --system-python
 echo      (the vendored wheels are CPython 3.12 builds; a system 3.11
 echo      will NOT work offline)
 echo.

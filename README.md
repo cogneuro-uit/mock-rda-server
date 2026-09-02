@@ -60,15 +60,18 @@ uv run mock-rda --help      # entry point
 The `.venv/bin/*` (Linux) or `.venv\Scripts\*` (Windows) binaries work without
 sourcing anything, so automated scripts can call `.venv/bin/pytest` directly.
 
-To use a system interpreter instead of the managed build, override
-`UV_PYTHON_PREFERENCE` before sourcing (note: `export` on its own line — a
-`VAR=x source ...` prefix does not persist after `source` returns):
+To use a system interpreter instead of the managed build (e.g. when
+antivirus blocks the managed python — see Troubleshooting), bootstrap with
+the `--system-python` flag, which configures everything correctly:
 
 ```bash
-export UV_PYTHON_PREFERENCE=system
-source scripts/env.sh
-uv sync --extra test --group dev
+bash scripts/bootstrap.sh --system-python          # + --offline if vendored
+uv sync --extra test --group dev                   # already run by bootstrap
 ```
+
+(Manual `UV_PYTHON_PREFERENCE` overrides no longer apply: the system mode
+sets `UV_NO_MANAGED_PYTHON=1`, which uv forbids combining with
+`UV_PYTHON_PREFERENCE`.)
 
 To bump the pinned uv version, edit `UV_VERSION` in both
 `scripts/bootstrap.sh` and `scripts/bootstrap.bat`.
