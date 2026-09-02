@@ -24,8 +24,10 @@ echo --- .tools\uv.exe --version:
 ".tools\uv.exe" --version 2>&1
 echo --- .venv\Scripts\python.exe --version:
 ".venv\Scripts\python.exe" --version 2>&1
-echo --- .venv\Scripts\mock-rda.exe --help:
-".venv\Scripts\mock-rda.exe" --help 2>&1 | findstr /i "usage" || echo   (mock-rda did not start)
+echo --- .venv\Scripts\python.exe -m mock_rda.cli --help (module path used by run-server):
+".venv\Scripts\python.exe" -m mock_rda.cli --help 2>&1 | findstr /i "usage" || echo   (module path did not start)
+echo --- .venv\Scripts\mock-rda.exe --help (shim - NOT used by run-server):
+".venv\Scripts\mock-rda.exe" --help 2>&1 | findstr /i "usage" || echo   (shim blocked or missing - harmless, run-server bypasses it)
 echo.
 
 echo [3] Repo location risk (OneDrive/Documents/Desktop lock files):

@@ -166,6 +166,11 @@ launchers call and flags the common environmental causes:
   folders (IT must allow `.tools\` and `.venv\`, or the project must be
   placed in a policy-allowed location)
 
+The launchers (`run-server.bat`/`run-server.sh`) deliberately call
+`python -m mock_rda.cli` instead of the `mock-rda.exe` shim: the shim is a
+small unsigned launcher that antivirus and policies commonly block, while
+`python.exe` itself has already proven to run during install.
+
 **"Running scripts is disabled"**: PowerShell execution policy — the
 project's `.bat` files are pure cmd and need neither PowerShell nor
 relaxed policies.

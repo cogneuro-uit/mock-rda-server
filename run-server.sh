@@ -11,16 +11,21 @@
 
 cd "$(dirname "$0")" || exit 1
 
-if [[ ! -x ".venv/bin/mock-rda" ]]; then
+if [[ ! -x ".venv/bin/python" ]]; then
     echo "mock-rda is not installed yet. Run ./install.sh first."
     exit 1
 fi
 
+# Call python -m mock_rda.cli instead of the mock-rda shim: the shim is a
+# small unsigned launcher that antivirus / lab policies commonly block
+# ("permission denied (os error 5)"), while python itself ran fine during
+# install.
+
 if [[ "${1:-}" == *.vhdr ]]; then
-    exec .venv/bin/mock-rda file "$1" --loop
+    exec .venv/bin/python -m mock_rda.cli file "$1" --loop
 elif [[ $# -eq 0 ]]; then
-    exec .venv/bin/mock-rda synth --channels 32 --rate 5000 --block-ms 4 \
+    exec .venv/bin/python -m mock_rda.cli synth --channels 32 --rate 5000 --block-ms 4 \
         --stim-period 2.0 --tep-template default
 else
-    exec .venv/bin/mock-rda "$@"
+    exec .venv/bin/python -m mock_rda.cli "$@"
 fi
