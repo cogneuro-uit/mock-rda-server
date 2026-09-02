@@ -35,6 +35,10 @@ scripts\bootstrap.bat
 scripts\env.bat
 ```
 
+No PowerShell is required: `bootstrap.bat`, `vendor.bat`, and `vendor-verify.bat`
+use plain `cmd.exe` plus Python, so they work even when Group Policy blocks
+PowerShell script execution.
+
 What lands where:
 
 | Path | Purpose |
@@ -85,15 +89,12 @@ with **no network at all**. The `vendor/` directory contains:
 
 ```bash
 bash scripts/vendor.sh          # Linux / macOS
-# or
-scripts\vendor.bat              # Windows cmd.exe (wrapper around scripts/vendor.ps1)
-# or
-pwsh -File scripts/vendor.ps1    # PowerShell 7+ (or Windows PowerShell 5.1)
+scripts\vendor.bat              # Windows cmd.exe
 ```
 
 **On an offline/air-gapped machine**, run the same bootstrap command with the
-`--offline` flag. The script will refuse to download anything and install Python,
-the venv, and all packages from `vendor/`:
+`--offline` flag. `bootstrap --offline` now works from a completely fresh clone
+because the repository carries vendored `uv` binaries in `vendor/uv-bin/`:
 
 ```bash
 # Linux / macOS
@@ -105,14 +106,19 @@ scripts\bootstrap.bat --offline
 scripts\env.bat
 ```
 
+The bootstrap and vendor tools use this download-source fallback order when they
+do need network access, so networks that block `github.com` can still fall back
+to PyPI and Astral's mirror:
+
+- `uv` binary: vendored `vendor/uv-bin/` first, then PyPI wheel, then GitHub release.
+- Python standalone tarball: Astral mirror (`releases.astral.sh`) first, then GitHub.
+- wheels: pip uses PyPI (and `--find-links` to the vendored wheelhouse when offline).
+
 Verify the vendored files before trusting them in a restricted environment:
 
 ```bash
 bash scripts/vendor-verify.sh     # Linux / macOS
-# or
-scripts\vendor-verify.bat         # Windows cmd.exe (wrapper around scripts/vendor-verify.ps1)
-# or
-pwsh -File scripts/vendor-verify.ps1 # PowerShell 7+ (or Windows PowerShell 5.1)
+scripts\vendor-verify.bat         # Windows cmd.exe
 ```
 
 A corrupted or missing file will cause the verify script to exit non-zero.

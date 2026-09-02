@@ -82,6 +82,17 @@ REQS="$ROOT/vendor/reqs-flat.txt"
 
 # Wipe wheels for a clean set; keep the new requirements files.
 rm -f vendor/wheels/*.whl
+# Prefer the vendored uv binary if it exists, otherwise fall through to PATH uv.
+UV_BIN="uv"
+if [[ -x "$ROOT/vendor/uv-bin/linux-x86_64/uv" ]]; then
+    mkdir -p "$ROOT/.tools"
+    cp "$ROOT/vendor/uv-bin/linux-x86_64/uv" "$ROOT/vendor/uv-bin/linux-x86_64/uvx" "$ROOT/.tools/"
+    chmod +x "$ROOT/.tools/uv" "$ROOT/.tools/uvx"
+    UV_BIN="$ROOT/.tools/uv"
+fi
+
+export UV_NO_MODIFY_PATH=1
+
 echo "==> downloading Linux x86_64 wheels ..."
 pip3 download -r "$REQS" -d vendor/wheels
 
@@ -129,7 +140,7 @@ cd vendor
 # Build the manifest body excluding the manifest file and its detached hash.
 {
     echo "# Generated $(date -u +%Y-%m-%dT%H:%M:%SZ)"
-    echo "# uv $(uv --version)"
+    echo "# uv $($UV_BIN --version)"
     echo "# pip $(pip3 --version | head -1)"
     find . -type f ! -name MANIFEST.txt ! -name MANIFEST.sha256 | sed 's|^\./||' | sort | while IFS= read -r f; do
         sha256sum "$f" | awk '{print $1"  "$2}'

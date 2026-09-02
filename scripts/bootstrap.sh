@@ -24,32 +24,54 @@ for arg in "$@"; do
 done
 
 if [[ ! -x "$UV_BIN" ]]; then
-    if [[ "$OFFLINE" == 1 ]]; then
-        echo "ERROR: --offline requires uv to already be present in $UV_INSTALL_DIR" >&2
-        exit 1
-    fi
-    echo "==> uv $UV_VERSION not found in $UV_INSTALL_DIR; downloading..."
-    mkdir -p "$UV_INSTALL_DIR"
-
-    # Download the pinned release directly from GitHub so nothing is written
-    # outside the repository (the astral.sh installer also drops a receipt in
-    # ~/.config/uv). uv/uvx are self-contained static binaries.
+    plat_subdir="linux-x86_64"
     case "$(uname -sm)" in
         "Linux x86_64")  plat="x86_64-unknown-linux-gnu";  ext="tar.gz" ;;
-        "Linux aarch64") plat="aarch64-unknown-linux-gnu"; ext="tar.gz" ;;
-        "Darwin x86_64") plat="x86_64-apple-darwin";       ext="tar.gz" ;;
-        "Darwin arm64")  plat="aarch64-apple-darwin";      ext="tar.gz" ;;
+        "Linux aarch64") plat="aarch64-unknown-linux-gnu"; ext="tar.gz"; plat_subdir="linux-aarch64" ;;
+        "Darwin x86_64") plat="x86_64-apple-darwin";       ext="tar.gz"; plat_subdir="darwin-x86_64" ;;
+        "Darwin arm64")  plat="aarch64-apple-darwin";      ext="tar.gz"; plat_subdir="darwin-arm64" ;;
         *) echo "unsupported platform: $(uname -sm)" >&2; exit 1 ;;
     esac
-    base_url="https://github.com/astral-sh/uv/releases/download/${UV_VERSION}/uv-${plat}"
-    tmpdir=$(mktemp -d)
-    if [[ "$ext" == "tar.gz" ]]; then
-        curl -LsSf "$base_url.tar.gz" | tar -xz -C "$tmpdir"
-        cp "$tmpdir/uv-${plat}/uv" "$tmpdir/uv-${plat}/uvx" "$UV_INSTALL_DIR/"
+
+    # Offline bootstrap now works from a fully fresh clone if the vendored uv
+    # binary is present in vendor/uv-bin/<plat>/.
+    if [[ -x "$ROOT/vendor/uv-bin/$plat_subdir/uv" ]]; then
+        echo "==> uv $UV_VERSION found in vendor/uv-bin/$plat_subdir; copying to $UV_INSTALL_DIR ..."
+        mkdir -p "$UV_INSTALL_DIR"
+        cp "$ROOT/vendor/uv-bin/$plat_subdir/uv" "$ROOT/vendor/uv-bin/$plat_subdir/uvx" "$UV_INSTALL_DIR/"
+        chmod +x "$UV_BIN" "$UV_INSTALL_DIR/uvx"
+    else
+        if [[ "$OFFLINE" == 1 ]]; then
+            echo "ERROR: --offline requires uv to already be present in $UV_INSTALL_DIR or vendor/uv-bin" >&2
+            exit 1
+        fi
+        echo "==> uv $UV_VERSION not found in $UV_INSTALL_DIR; downloading..."
+        mkdir -p "$UV_INSTALL_DIR"
+
+        # Try the PyPI wheel first (better reachability than GitHub on some networks),
+        # then the GitHub release tarball.
+        tmpdir=$(mktemp -d)
+        got_uv=0
+        if command -v python3 >/dev/null 2>&1; then
+            python3 "$ROOT/scripts/pyvendor.py" ensure-uv
+            if [[ -x "$UV_BIN" ]]; then
+                got_uv=1
+            fi
+        fi
+        if [[ "$got_uv" == 0 ]]; then
+            # Download the pinned release directly from GitHub so nothing is written
+            # outside the repository (the astral.sh installer also drops a receipt in
+            # ~/.config/uv). uv/uvx are self-contained static binaries.
+            base_url="https://github.com/astral-sh/uv/releases/download/${UV_VERSION}/uv-${plat}"
+            if [[ "$ext" == "tar.gz" ]]; then
+                curl -LsSf "$base_url.tar.gz" | tar -xz -C "$tmpdir"
+                cp "$tmpdir/uv-${plat}/uv" "$tmpdir/uv-${plat}/uvx" "$UV_INSTALL_DIR/"
+            fi
+            rm -rf "$tmpdir"
+            chmod +x "$UV_BIN" "$UV_INSTALL_DIR/uvx"
+            echo "==> uv $UV_VERSION installed from GitHub release"
+        fi
     fi
-    rm -rf "$tmpdir"
-    chmod +x "$UV_BIN" "$UV_INSTALL_DIR/uvx"
-    echo "==> uv $UV_VERSION installed from GitHub release"
 fi
 
 if [[ ! -f .python-version ]]; then
