@@ -14,21 +14,22 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Set up Python ${{ matrix.python-version }}
-        uses: actions/setup-python@v5
-        with:
-          python-version: ${{ matrix.python-version }}
-          cache: pip
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v5
 
-      - name: Install package + test extra + ruff
-        run: |
-          python -m pip install --upgrade pip
-          pip install -e ".[test]" ruff
+      - name: Install Python ${{ matrix.python-version }}
+        run: uv python install ${{ matrix.python-version }}
+
+      - name: Install dependencies
+        run: uv sync --frozen --python ${{ matrix.python-version }} --extra test --group dev
+
+      - name: Check lockfile is up to date
+        run: uv lock --check
 
       - name: Lint (ruff)
-        run: ruff check .
+        run: uv run ruff check .
 
       - name: Run default tier + mne-lsl cross-test
         # The mne_lsl-marked test is included; it skips gracefully if mne-lsl
         # provides no RDA client (see tests/test_cross_mne_lsl.py).
-        run: pytest -q -rs
+        run: uv run pytest -q -rs

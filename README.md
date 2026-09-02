@@ -11,6 +11,66 @@ layout (see [`protocol.py`](src/mock_rda/protocol.py)); no GPL code is copied.
 
 ## Install
 
+### Portable install (uv, no admin — recommended for lab machines)
+
+One-command bootstrap; it downloads a vendored `uv`, a managed Python 3.12, and
+all dependencies into the project folder. Nothing is installed system-wide and
+no home-directory state is used.
+
+**Linux / macOS:**
+
+```bash
+git clone https://github.com/cogneuro-uit/mock-rda-server.git
+cd mock-rda-server
+bash scripts/bootstrap.sh
+source scripts/env.sh
+```
+
+**Windows (cmd.exe):**
+
+```cmd
+git clone https://github.com/cogneuro-uit/mock-rda-server.git
+cd mock-rda-server
+scripts\bootstrap.bat
+scripts\env.bat
+```
+
+What lands where:
+
+| Path | Purpose |
+| ---- | ------- |
+| `.tools/` | vendored `uv`/`uvx` binaries |
+| `.uv-python/` | managed Python interpreter |
+| `.uv-cache/` | package download cache |
+| `.venv/` | project virtual environment |
+
+Daily use after the one-time bootstrap:
+
+```bash
+source scripts/env.sh       # or just add .tools to PATH
+uv run pytest -q -rs        # run tests
+uv run ruff check .         # lint
+uv run mock-rda --help      # entry point
+```
+
+The `.venv/bin/*` (Linux) or `.venv\Scripts\*` (Windows) binaries work without
+sourcing anything, so automated scripts can call `.venv/bin/pytest` directly.
+
+To use a system interpreter instead of the managed build, override
+`UV_PYTHON_PREFERENCE` before sourcing (note: `export` on its own line — a
+`VAR=x source ...` prefix does not persist after `source` returns):
+
+```bash
+export UV_PYTHON_PREFERENCE=system
+source scripts/env.sh
+uv sync --extra test --group dev
+```
+
+To bump the pinned uv version, edit `UV_VERSION` in both
+`scripts/bootstrap.sh` and `scripts/bootstrap.bat`.
+
+### Install with pip (any Python ≥ 3.11)
+
 ```bash
 pip install git+https://github.com/cogneuro-uit/mock-rda-server.git
 ```
