@@ -15,6 +15,10 @@ from __future__ import annotations
 
 import argparse
 import socket
+import sys
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 from mock_rda.protocol import MsgType, RDAFramer, parse_message
 

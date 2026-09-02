@@ -85,23 +85,40 @@ if defined OFFLINE if exist "%VENDOR_DIR%\wheels" (
         if errorlevel 1 exit /b 1
     )
 
-    :: Create a fresh venv. For system mode, uv discovers the system interpreter
-    :: when managed pythons are forbidden; the user may override with UV_PYTHON.
-    :: Vendored wheels are cp312, so 3.12 is required for offline installs.
+    :: Create a fresh venv. For system mode, try 3.12 first, then 3.14 (the lab
+    :: Windows machines often have only 3.14.7).  The user may override with
+    :: UV_PYTHON.  Vendored wheels cover CPython 3.12 and 3.14, so one of those
+    :: versions is required for offline installs; other versions need network.
     :: Always seed pip: harmless for managed mode and avoids "externally managed"
     :: errors with system interpreters.
     if exist ".venv" rmdir /s /q ".venv"
+    set "VENV_VERSION="
     if defined UV_PYTHON (
+        echo ==^> using explicit UV_PYTHON=%UV_PYTHON% for venv ...
         "%UV_INSTALL_DIR%\uv.exe" venv --python "%UV_PYTHON%" --seed
-    ) else (
-        "%UV_INSTALL_DIR%\uv.exe" venv --python 3.12 --seed
+        if not errorlevel 1 set "VENV_VERSION=%UV_PYTHON%"
     )
-    if errorlevel 1 (
-        echo ERROR: system Python 3.12 required (vendored wheels are cp312).
+    if not defined VENV_VERSION (
+        "%UV_INSTALL_DIR%\uv.exe" venv --python 3.12 --seed
+        if not errorlevel 1 (
+            set "VENV_VERSION=3.12"
+            echo ==^> created venv with system Python 3.12
+        ) else (
+            "%UV_INSTALL_DIR%\uv.exe" venv --python 3.14 --seed
+            if not errorlevel 1 (
+                set "VENV_VERSION=3.14"
+                echo ==^> created venv with system Python 3.14
+            )
+        )
+    )
+    if not defined VENV_VERSION (
+        echo ERROR: could not create a venv with system Python 3.12 or 3.14.
+        echo Vendored wheels cover CPython 3.12 and 3.14; other versions need network.
         echo Found system Pythons:
         "%UV_INSTALL_DIR%\uv.exe" python find 3.12 2>nul
+        "%UV_INSTALL_DIR%\uv.exe" python find 3.14 2>nul
         echo Run without --system-python to use the managed Python, or set UV_PYTHON
-        echo to an explicit system Python 3.12 path, or ask IT to install Python 3.12.
+        echo to an explicit system Python 3.12 or 3.14 path.
         exit /b 1
     )
 
@@ -122,10 +139,15 @@ if defined OFFLINE if exist "%VENDOR_DIR%\wheels" (
         .venv\Scripts\python.exe -m pip install --no-index --find-links "%VENDOR_DIR%\wheels" -e . --no-deps
     )
     if errorlevel 1 exit /b 1
-) else if defined SYSTEM_PYTHON (
+    ) else if defined SYSTEM_PYTHON (
     echo ==^> syncing dependencies (extra=test, group=dev) against system Python...
     "%UV_INSTALL_DIR%\uv.exe" sync --extra test --group dev
-    if errorlevel 1 exit /b 1
+    if errorlevel 1 (
+        echo ERROR: system Python 3.12 or 3.14 required; vendored wheels cover both.
+        echo Run without --system-python to use the managed Python, or set UV_PYTHON
+        echo to an explicit system Python 3.12 or 3.14 path.
+        exit /b 1
+    )
 ) else (
     echo ==^> syncing dependencies (extra=test, group=dev)...
     "%UV_INSTALL_DIR%\uv.exe" sync --extra test --group dev

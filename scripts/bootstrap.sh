@@ -92,7 +92,7 @@ fi
 VENDOR_DIR="$ROOT/vendor"
 if [[ "$OFFLINE" == 1 && -d "$VENDOR_DIR" ]]; then
     if [[ "$SYSTEM_PYTHON" == 1 ]]; then
-        echo "==> offline bootstrap: using vendored wheels + system Python..."
+        echo "==> offline bootstrap: using vendored wheels (cp312 + cp314) + system Python..."
     else
         echo "==> offline bootstrap: using vendored Python tarball and wheels..."
     fi
@@ -110,19 +110,37 @@ if [[ "$OFFLINE" == 1 && -d "$VENDOR_DIR" ]]; then
     fi
 
     # Create a fresh venv. For managed mode the .python-version file pins 3.12.
-    # For system mode, uv discovers the system interpreter (on Windows via the
-    # py launcher when managed pythons are forbidden); the user may override
-    # with UV_PYTHON. Vendored wheels are cp312, so 3.12 is required for offline
-    # installs; other versions would need network.
+    # For system mode, try 3.12 first (the originally supported version), then 3.14
+    # (the lab Windows machines often have only 3.14.7).  The user may override
+    # with UV_PYTHON.  Vendored wheels cover CPython 3.12 and 3.14, so one of
+    # those versions is required for offline installs; other versions need network.
     rm -rf .venv
-    if ! uv venv --python "${UV_PYTHON:-3.12}"; then
+    VENV_VERSION=""
+    if [[ -n "${UV_PYTHON:-}" ]]; then
+        echo "==> using explicit UV_PYTHON=${UV_PYTHON} for venv ..."
+        if uv venv --python "$UV_PYTHON"; then
+            VENV_VERSION="${UV_PYTHON}"
+        fi
+    fi
+    if [[ -z "$VENV_VERSION" ]]; then
+        if uv venv --python 3.12; then
+            VENV_VERSION="3.12"
+            echo "==> created venv with system Python 3.12"
+        elif uv venv --python 3.14; then
+            VENV_VERSION="3.14"
+            echo "==> created venv with system Python 3.14"
+        fi
+    fi
+    if [[ -z "$VENV_VERSION" ]]; then
         echo
-        echo "ERROR: system Python 3.12 required (vendored wheels are cp312)." >&2
+        echo "ERROR: could not create a venv with system Python 3.12 or 3.14." >&2
+        echo "Vendored wheels cover CPython 3.12 and 3.14; other versions need network." >&2
         echo "Found system Pythons:" >&2
         uv python find 3.12 2>/dev/null || true
+        uv python find 3.14 2>/dev/null || true
         echo >&2
         echo "Run without --system-python to use the managed Python, or set UV_PYTHON" >&2
-        echo "to an explicit system Python 3.12 path, or ask IT to install Python 3.12." >&2
+        echo "to an explicit system Python 3.12 or 3.14 path." >&2
         exit 1
     fi
 
@@ -164,8 +182,8 @@ elif [[ "$SYSTEM_PYTHON" == 1 ]]; then
     echo "==> syncing dependencies (extra=test, group=dev) against system Python..."
     if ! uv sync --extra test --group dev; then
         echo
-        echo "ERROR: system Python 3.12 required (vendored wheels are cp312);" >&2
-        echo "either install a system 3.12, set UV_PYTHON to its path, or bootstrap" >&2
+        echo "ERROR: system Python 3.12 or 3.14 required (vendored wheels cover both);" >&2
+        echo "either install a system 3.12/3.14, set UV_PYTHON to its path, or bootstrap" >&2
         echo "without --system-python." >&2
         exit 1
     fi

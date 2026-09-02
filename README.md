@@ -83,7 +83,7 @@ with **no network at all**. The `vendor/` directory contains:
 
 - `vendor/python/` — CPython 3.12 standalone tarballs for Linux x86_64 and Windows x86_64.
 - `vendor/wheels/` — all runtime, test, dev, and build dependency wheels for
-  CPython 3.12 (Linux and Windows).
+  CPython 3.12 and 3.14 (Linux and Windows).
 - `vendor/reqs-flat.txt` — the pinned dependency list used for offline installs.
 - `vendor/MANIFEST.txt` and `vendor/MANIFEST.sha256` — integrity manifests.
 
@@ -176,8 +176,8 @@ small unsigned launcher that antivirus and policies commonly block, while
 
 **"Blocked managed Python (os error 5) but system Python exists"**: run
 `scripts\diagnose.bat` step [5] to see system Pythons. If a CPython 3.12 is
-listed, bootstrap against the signed system interpreter instead of the managed
-one:
+listed (3.12 or 3.14), bootstrap against the signed system interpreter instead
+of the managed one:
 
 ```cmd
 install.bat --system-python
@@ -190,10 +190,10 @@ Linux / macOS:
 ```
 
 The venv then uses the IT-installed, signed system interpreter, which
-antivirus does not block, and offline installs still work because the vendored
-wheels are `cp312`. If only 3.11 is present, the offline wheelhouse cannot be
-used (wheels are `cp312`) — bootstrap online instead, or ask IT for 3.12 or an
-AV exclusion.
+antivirus does not block, and offline installs work because the vendored
+wheels cover CPython 3.12 and 3.14 (Linux and Windows). System Python 3.12
+or 3.14 will match the wheelhouse; any other version needs network access,
+or you must ask IT for 3.12/3.14 or an AV exclusion.
 
 **"Running scripts is disabled"**: PowerShell execution policy — the
 project's `.bat` files are pure cmd and need neither PowerShell nor

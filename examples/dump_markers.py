@@ -9,7 +9,9 @@ separated by a fraction of a millisecond.
 """
 import argparse
 import sys
+from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 sys.path.insert(0, __file__.rsplit("/", 1)[0])
 
 from minimal_client import RDAClient

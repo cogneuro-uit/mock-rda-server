@@ -93,11 +93,17 @@ fi
 
 export UV_NO_MODIFY_PATH=1
 
-echo "==> downloading Linux x86_64 wheels ..."
-pip3 download -r "$REQS" -d vendor/wheels
+echo "==> downloading Linux x86_64 cp312 wheels ..."
+pip3 download -r "$REQS" --platform manylinux_2_17_x86_64 --platform manylinux_2_27_x86_64 --platform manylinux2014_x86_64 --python-version 3.12 --only-binary=:all: -d vendor/wheels
 
-echo "==> downloading Windows win_amd64 wheels ..."
+echo "==> downloading Linux x86_64 cp314 wheels ..."
+pip3 download -r "$REQS" --platform manylinux_2_17_x86_64 --platform manylinux_2_27_x86_64 --platform manylinux2014_x86_64 --python-version 3.14 --only-binary=:all: -d vendor/wheels
+
+echo "==> downloading Windows win_amd64 cp312 wheels ..."
 pip3 download -r "$REQS" --platform win_amd64 --python-version 3.12 --only-binary=:all: -d vendor/wheels
+
+echo "==> downloading Windows win_amd64 cp314 wheels ..."
+pip3 download -r "$REQS" --platform win_amd64 --python-version 3.14 --only-binary=:all: -d vendor/wheels
 
 echo "==> downloading hatchling + transitive build deps ..."
 pip3 download hatchling editables -d vendor/wheels

@@ -325,6 +325,8 @@ def _pip_download(
     reqs_file: Path = None,
     packages: list = None,
     target_platform: str = None,
+    python_version: str = "3.12",
+    linux_platforms: list = None,
 ) -> None:
     cmd = pip + ["download"]
     if reqs_file is not None:
@@ -334,7 +336,15 @@ def _pip_download(
     if target_platform is not None:
         cmd += [
             "--platform", target_platform,
-            "--python-version", "3.12",
+            "--python-version", python_version,
+            "--only-binary=:all:",
+        ]
+    elif linux_platforms is not None:
+        # Linux current-platform download may need multiple glibc floors.
+        for plat in linux_platforms:
+            cmd += ["--platform", plat]
+        cmd += [
+            "--python-version", python_version,
             "--only-binary=:all:",
         ]
     cmd += ["-d", str(dest)]
@@ -407,6 +417,7 @@ def _generate_manifest() -> None:
         f"# Generated {generated}",
         f"# uv {uv_version}",
         f"# pip {pip_version}",
+        "# Vendored wheels cover CPython 3.12 and 3.14 (Linux x86_64 + Windows x86_64)",
     ] + entries
     body = "\n".join(lines) + "\n"
 
@@ -454,14 +465,66 @@ def cmd_refresh() -> None:
     pip = _pip_command()
     vendor_subdir, _uv_plat = _platform_tuple()
 
+    linux_platforms = [
+        "manylinux_2_17_x86_64",
+        "manylinux_2_27_x86_64",
+        "manylinux2014_x86_64",
+    ]
+
+    def _count_wheels(platform: str, pyver: str) -> int:
+        tag = pyver.replace(".", "")
+        patterns = {
+            ("linux", "3.12"): f"*cp{tag}*manylinux*.whl",
+            ("linux", "3.14"): f"*cp{tag}*manylinux*.whl",
+            ("win", "3.12"): f"*cp{tag}*win_amd64*.whl",
+            ("win", "3.14"): f"*cp{tag}*win_amd64*.whl",
+        }
+        return len(list(wheels_dir.glob(patterns[(platform, pyver)])))
+
     if vendor_subdir == "windows-x86_64":
-        print("==> downloading Windows win_amd64 wheels ...")
-        _pip_download(pip, wheels_dir, reqs_file=flat_path, target_platform="win_amd64")
+        print("==> downloading Windows win_amd64 cp312 wheels ...")
+        _pip_download(
+            pip, wheels_dir, reqs_file=flat_path,
+            target_platform="win_amd64", python_version="3.12",
+        )
+        cnt = _count_wheels(platform='win', pyver='3.12')
+        print(f"    count: {cnt} win_amd64 cp312 wheels")
+        print("==> downloading Windows win_amd64 cp314 wheels ...")
+        _pip_download(
+            pip, wheels_dir, reqs_file=flat_path,
+            target_platform="win_amd64", python_version="3.14",
+        )
+        cnt = _count_wheels(platform='win', pyver='3.14')
+        print(f"    count: {cnt} win_amd64 cp314 wheels")
     else:
-        print("==> downloading current-platform wheels ...")
-        _pip_download(pip, wheels_dir, reqs_file=flat_path)
-        print("==> downloading Windows win_amd64 wheels ...")
-        _pip_download(pip, wheels_dir, reqs_file=flat_path, target_platform="win_amd64")
+        print("==> downloading Linux x86_64 cp312 wheels ...")
+        _pip_download(
+            pip, wheels_dir, reqs_file=flat_path,
+            linux_platforms=linux_platforms, python_version="3.12",
+        )
+        cnt = _count_wheels(platform='linux', pyver='3.12')
+        print(f"    count: {cnt} Linux x86_64 cp312 wheels")
+        print("==> downloading Linux x86_64 cp314 wheels ...")
+        _pip_download(
+            pip, wheels_dir, reqs_file=flat_path,
+            linux_platforms=linux_platforms, python_version="3.14",
+        )
+        cnt = _count_wheels(platform='linux', pyver='3.14')
+        print(f"    count: {cnt} Linux x86_64 cp314 wheels")
+        print("==> downloading Windows win_amd64 cp312 wheels ...")
+        _pip_download(
+            pip, wheels_dir, reqs_file=flat_path,
+            target_platform="win_amd64", python_version="3.12",
+        )
+        cnt = _count_wheels(platform='win', pyver='3.12')
+        print(f"    count: {cnt} win_amd64 cp312 wheels")
+        print("==> downloading Windows win_amd64 cp314 wheels ...")
+        _pip_download(
+            pip, wheels_dir, reqs_file=flat_path,
+            target_platform="win_amd64", python_version="3.14",
+        )
+        cnt = _count_wheels(platform='win', pyver='3.14')
+        print(f"    count: {cnt} win_amd64 cp314 wheels")
 
     print("==> downloading hatchling + transitive build deps ...")
     _pip_download(pip, wheels_dir, packages=["hatchling", "editables"])
