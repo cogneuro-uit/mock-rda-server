@@ -426,11 +426,13 @@ class ItepViewer:
     def render_burst(self, epoch_uv, times_ms, emg_channels, selected,
                      expected_ms, actual_ms, align_ms, topo_lat,
                      emg_window, tep_window, fly_window, ylim, sfreq,
-                     emg_guides=(25.0, 50.0)):
+                     emg_guides=(25.0, 50.0), inferred_ms=()):
         """Burst layout: times are ms relative to the *first* pulse.
 
         ``expected_ms`` are the nominal pulse times (grey dotted lines),
-        ``actual_ms`` the offsets of triggers that really arrived (red lines),
+        ``actual_ms`` the offsets of triggers that really arrived (solid red),
+        ``inferred_ms`` pulse positions synthesized from burst timing when the
+        recorder logs fewer markers than the burst has pulses (dashed red),
         ``align_ms`` the per-pulse alignment times (actual when received,
         expected otherwise) used for the butterfly panel and the topomaps.
         """
@@ -442,6 +444,8 @@ class ItepViewer:
                 ax.axvline(t, color="0.6", lw=0.9, ls=":")
             for t in actual_ms:
                 ax.axvline(t, color="red", lw=1.0, alpha=0.8)
+            for t in inferred_ms:
+                ax.axvline(t, color="red", lw=1.0, ls="--", alpha=0.8)
 
         # --- EMG until 50 ms after the last expected pulse ---
         self._draw_emg(self.ax_emg, epoch_uv, times_ms, emg_channels,
@@ -614,7 +618,7 @@ def run_gui(args):
     ctrl = ttk.Frame(panel)
     ctrl.pack(side=tk.LEFT, padx=6, pady=4)
 
-    mode = {"value": "single"}
+    mode = {"value": args.mode}
     burst_label = f"burst ({args.burst_count} × {1000.0 / args.burst_isi:g} Hz)"
 
     def toggle_mode():
@@ -623,7 +627,10 @@ def run_gui(args):
                                          else "single pulse"))
         redraw()
 
-    mode_btn = ttk.Button(ctrl, text="Mode: single pulse", command=toggle_mode)
+    mode_btn = ttk.Button(
+        ctrl,
+        text="Mode: " + (burst_label if mode["value"] == "burst" else "single pulse"),
+        command=toggle_mode)
     mode_btn.grid(row=0, column=0, sticky="we")
 
     state = {"epoch": None}
@@ -670,11 +677,28 @@ def run_gui(args):
             actual_ms = [o / sfreq * 1000.0 for o in offsets]
             align_ms = match_burst_triggers(actual_ms, burst_expected,
                                             tol_ms=args.burst_isi / 2.0)
+            # Recorders commonly log ONE marker per burst, not per pulse. When
+            # fewer markers arrived than the burst has pulses, synthesize the
+            # missing pulse positions from burst timing (first marker + k*ISI,
+            # relative to the first expected pulse) so every pulse is visible:
+            # solid red = marker actually received; dashed red = inferred.
+            if len(actual_ms) < len(burst_expected):
+                first = min(actual_ms, default=burst_expected[0]) - burst_expected[0]
+                seen = [t for t in actual_ms]
+                inferred = []
+                for k in range(len(burst_expected)):
+                    t = first + k * args.burst_isi
+                    if not any(abs(t - s) <= args.burst_isi / 2.0 for s in seen):
+                        inferred.append(t)
+                display_ms = (sorted(seen), sorted(inferred))
+            else:
+                display_ms = (actual_ms, [])
             ylim = compute_ylim(epoch_uv, times_ms, align_ms)
             viewer.render_burst(epoch_uv, times_ms, emg_channels, selected,
                                 burst_expected, actual_ms, align_ms, burst_topo_lat,
                                 burst_emg_window, burst_tep_window, short_window,
-                                ylim, sfreq, emg_guides=emg_guides)
+                                ylim, sfreq, emg_guides=emg_guides,
+                                inferred_ms=display_ms[1])
         else:
             ylim = compute_ylim(epoch_uv, times_ms, [0.0])
             viewer.render(epoch_uv, times_ms, emg_channels, selected, topo_latencies,
@@ -788,6 +812,9 @@ def main(argv=None):
                     help="number of pulses per burst in burst mode")
     ap.add_argument("--burst-isi", type=float, default=20.0,
                     help="inter-pulse interval (ms) within a burst (20 ms = 50 Hz)")
+    ap.add_argument("--mode", choices=("single", "burst"), default="single",
+                    help="start in this mode (default: single; the Mode button "
+                         "still toggles)")
     args = ap.parse_args(argv)
     run_gui(args)
 
