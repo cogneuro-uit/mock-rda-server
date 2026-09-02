@@ -153,6 +153,31 @@ pip install -e ".[test]"    # + pytest, mne, mne-lsl, for the test suite
 
 Requires Python ≥ 3.11. A conda environment is pinned in `environment.yml`.
 
+### Shared install (multi-user machine, no per-user state)
+
+On a machine where several Windows accounts must run the client (e.g.
+against a real Recorder), per-user `pip install` lands in
+`%LOCALAPPDATA%` and helps only one account. Instead install everything
+into the repo folder itself:
+
+```cmd
+install-shared.bat
+```
+
+This runs `pip install --target .deps .` — numpy, scipy, matplotlib, mne
+**and** the `mock_rda` package all land in `C:\...\mock-rda-server\.deps\`
+(shared with the repo's own folder permissions). Then **any user** starts
+the client with:
+
+```cmd
+run-client-shared.bat
+```
+
+which runs `examples\gui_client.py` with `PYTHONPATH=.deps` — any Python on
+PATH works, nothing is installed per user, and the online install falls
+back to the vendored wheelhouse when offline. If the repo folder itself is
+shared (e.g. `C:\Experiments\...`), so is the whole toolchain.
+
 ## Troubleshooting
 
 **"permission denied (os error 5)"** on Windows: this is Access Denied

@@ -15,6 +15,7 @@ dist/
 .uv-cache/
 .uv-python/
 .uv-tools/
+.deps/
 *.log
 
 # OS
