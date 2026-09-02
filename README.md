@@ -194,10 +194,19 @@ After cloning (or copying) the repo, no terminal is needed at all:
    **Drag a `.vhdr` file onto `run-server.bat`** to stream that recording
    instead (it loops automatically). Extra command-line arguments are
    forwarded to `mock-rda` verbatim.
+3. **Double-click `run-client.bat`** to start the bundled epoch-viewer client
+   (trigger `Stimulus`, electrode `C3`) against the running server — or pass
+   any `gui_client.py` arguments through. `run-client.sh` is the Linux/macOS
+   twin.
 
-These launchers call `.venv\Scripts\mock-rda.exe` / `.venv/bin/mock-rda`
-directly, so they work regardless of the machine's `.py` file associations
-(e.g. an editor owning `.py` double-clicks).
+These launchers call the project venv's `python.exe` / `python` directly
+(`python -m mock_rda.cli` for the server), so they work regardless of the
+machine's `.py` file associations (e.g. an editor or the Microsoft Store
+stub owning `python`/`.py`).
+
+> If a client or example ever reports `No module named numpy`, it was run
+> with the machine's own Python instead of the project's venv — use the
+> `run-client`/`run-server` launchers, which always use the venv.
 
 ```bash
 # Stream a recorded triplet (loops seamlessly with --loop)
