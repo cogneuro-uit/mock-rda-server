@@ -24,6 +24,15 @@ if "%~1"=="" (
     ".venv\Scripts\python.exe" examples\gui_client.py %*
 )
 
+if errorlevel 1 (
+    echo.
+    echo Client exited with an error. If it closed instantly^: is the server
+    echo running^? Start it with run-server.bat first ^(the client connects to
+    echo localhost:51244 immediately and exits if nothing is listening^).
+    echo If the message was "permission denied ^(os error 5^)": the antivirus
+    echo blocks the managed python.exe - run scripts\diagnose.bat and see the
+    echo README Troubleshooting section.
+)
 echo.
 echo Client exited.
 pause

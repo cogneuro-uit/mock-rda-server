@@ -31,6 +31,12 @@ if /I "%~x1"==".vhdr" (
     ".venv\Scripts\python.exe" -m mock_rda.cli %*
 )
 
+if errorlevel 1 (
+    echo.
+    echo Server exited with an error. If the message was "permission denied
+    echo ^(os error 5^)": the antivirus blocks the managed python.exe - run
+    echo scripts\diagnose.bat and see the README Troubleshooting section.
+)
 echo.
 echo Server exited.
 pause
