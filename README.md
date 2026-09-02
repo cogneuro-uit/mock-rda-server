@@ -123,6 +123,15 @@ scripts\vendor-verify.bat         # Windows cmd.exe
 
 A corrupted or missing file will cause the verify script to exit non-zero.
 
+**Moving the repo with a USB stick / exFAT drive:** copy only the tracked
+repository files (the git checkout — source, scripts, and `vendor/`); do **not**
+copy the generated state directories (`.venv/`, `.uv-python/`, `.uv-cache/`,
+`.tools/`). The generated dirs contain symlinks and hardlinks that exFAT and
+FAT cannot represent ("destination filesystem does not support symlinks"),
+and `.venv` also hardcodes absolute paths — they are rebuilt per machine by
+`bootstrap --offline` from the vendored tarball and wheels anyway. The
+repository itself contains no symlinks and is exFAT-safe.
+
 ### Install with pip (any Python ≥ 3.11)
 
 ```bash
