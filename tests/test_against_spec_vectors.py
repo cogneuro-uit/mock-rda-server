@@ -61,7 +61,8 @@ def test_data32_frozen_and_handbuilt():
 
     # hand-derived
     body = struct.pack("<III", 5, 2, 1)  # nBlock, nPoints, nMarkers
-    body += struct.pack("<4f", 1.0, 3.0, 2.0, 4.0)  # multiplexed by sample: pt0[ch0,ch1], pt1[ch0,ch1]
+    # multiplexed by sample: pt0[ch0,ch1], pt1[ch0,ch1]
+    body += struct.pack("<4f", 1.0, 3.0, 2.0, 4.0)
     type_b = b"Stimulus\0"
     desc_b = b"S  1\0"
     marker_size = 16 + len(type_b) + len(desc_b)

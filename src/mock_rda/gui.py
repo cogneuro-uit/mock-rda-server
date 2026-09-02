@@ -214,7 +214,7 @@ def run_control_gui(server, stop_event: threading.Event, *,
         if stop_event.is_set():
             root.destroy()
             return
-        for var, (_label, value) in zip(stat_vars, live_stats(server)):
+        for var, (_label, value) in zip(stat_vars, live_stats(server), strict=True):
             var.set(value)
         sched = server.scheduler
         streaming = server.blocks_streamed > 0

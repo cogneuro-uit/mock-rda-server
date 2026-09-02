@@ -350,7 +350,7 @@ class ItepViewer:
         # --- topomaps at fixed latencies ---
         eeg = epoch_uv[self.full_idx] if self.full_idx else np.empty((0, epoch_uv.shape[1]))
         im = None
-        for k, (ax_t, lat) in enumerate(zip(self.topo_axes, topo_latencies)):
+        for k, (ax_t, lat) in enumerate(zip(self.topo_axes, topo_latencies, strict=True)):
             t_idx = int(np.argmin(np.abs(times_ms - lat)))
             # The click hint belongs on the panel group, not on every map.
             title = f"{lat:g} ms" + ("\n(click a sensor to toggle)" if k == 0 else "\n")
@@ -497,7 +497,7 @@ class ItepViewer:
         # --- one topomap per pulse ---
         eeg = epoch_uv[self.full_idx] if self.full_idx else np.empty((0, epoch_uv.shape[1]))
         im = None
-        for k, (ax_t, t_k) in enumerate(zip(self.topo_axes, align_ms)):
+        for k, (ax_t, t_k) in enumerate(zip(self.topo_axes, align_ms, strict=True)):
             t_idx = int(np.argmin(np.abs(times_ms - (t_k + topo_lat))))
             im = self._draw_topomap(ax_t, eeg[:, t_idx], selected, ylim,
                                     f"pulse {k + 1} +{topo_lat:g} ms") or im
@@ -701,7 +701,8 @@ def run_gui(args):
         flow["interval"] = n_points / sfreq
 
     def net_loop():
-        trigger_pred = lambda m: m["type"] != "New Segment"  # react to all triggers
+        def trigger_pred(m):
+            return m["type"] != "New Segment"  # react to all triggers
         for epoch, _marker, offsets in epoch_stream_pre_post(msgs, pre_samples, post_samples,
                                                              trigger_pred, on_data=on_data):
             state["epoch"] = (epoch, offsets)

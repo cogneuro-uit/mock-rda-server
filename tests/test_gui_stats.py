@@ -5,6 +5,7 @@ from __future__ import annotations
 import time
 
 from minimal_client import RDAClient
+
 from mock_rda.gui import (
     describe_source,
     format_bytes,
