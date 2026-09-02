@@ -150,6 +150,26 @@ pip install -e ".[test]"    # + pytest, mne, mne-lsl, for the test suite
 
 Requires Python ≥ 3.11. A conda environment is pinned in `environment.yml`.
 
+## Troubleshooting
+
+**"permission denied (os error 5)"** on Windows: this is Access Denied
+reported by `uv.exe` or a `.venv\Scripts` launcher, not by our scripts.
+Double-click `scripts\diagnose.bat` — it pinpoint-tests every binary the
+launchers call and flags the common environmental causes:
+
+- repo inside OneDrive/Desktop/Documents (sync engines lock freshly
+  installed files — move it to e.g. `C:\mock-rda-server` and re-run
+  `install.bat`)
+- antivirus still real-time-scanning the ~30k freshly installed files
+  (usually transient — retry after a minute, or request an exclusion)
+- lab-machine policy (AppLocker) blocking executables in user-writable
+  folders (IT must allow `.tools\` and `.venv\`, or the project must be
+  placed in a policy-allowed location)
+
+**"Running scripts is disabled"**: PowerShell execution policy — the
+project's `.bat` files are pure cmd and need neither PowerShell nor
+relaxed policies.
+
 ## Usage
 
 The commands below assume the environment is active. With the **portable
