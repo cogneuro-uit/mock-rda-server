@@ -158,6 +158,22 @@ the venv binaries directly — `.venv/bin/mock-rda` / `.venv/bin/python`
 (`.venv\Scripts\mock-rda.exe` / `.venv\Scripts\python.exe` on Windows) — no
 env vars needed.
 
+### Double-click quick start
+
+After cloning (or copying) the repo, no terminal is needed at all:
+
+1. **Double-click `install.bat`** (Windows) or run `./install.sh` — installs
+   everything into the project folder, offline from `vendor/` when present.
+2. **Double-click `run-server.bat`** — starts streaming a synthetic source
+   (32 ch, 5 kHz, stimulus every 2 s) and opens the Tk control window.
+   **Drag a `.vhdr` file onto `run-server.bat`** to stream that recording
+   instead (it loops automatically). Extra command-line arguments are
+   forwarded to `mock-rda` verbatim.
+
+These launchers call `.venv\Scripts\mock-rda.exe` / `.venv/bin/mock-rda`
+directly, so they work regardless of the machine's `.py` file associations
+(e.g. an editor owning `.py` double-clicks).
+
 ```bash
 # Stream a recorded triplet (loops seamlessly with --loop)
 mock-rda file example_data/thea_session_2.vhdr --loop --block-ms 4
