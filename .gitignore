@@ -11,6 +11,10 @@ dist/
 
 # Env / tooling
 .venv/
+.tools/
+.uv-cache/
+.uv-python/
+.uv-tools/
 *.log
 
 # OS
@@ -19,5 +23,3 @@ dist/
 # Local-only working notes (kept out of the public repo)
 CLAUDE.md
 mock-rda-server-PLAN.md
-
-uv.lock

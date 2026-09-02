@@ -29,6 +29,9 @@ dependencies = [
 file = ["mne>=1.5"]
 test = ["pytest>=7", "mne>=1.5", "mne-lsl>=1.5"]
 
+[dependency-groups]
+dev = ["ruff>=0.15"]
+
 [project.scripts]
 mock-rda = "mock_rda.cli:main"
 
