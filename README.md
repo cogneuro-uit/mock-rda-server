@@ -69,6 +69,54 @@ uv sync --extra test --group dev
 To bump the pinned uv version, edit `UV_VERSION` in both
 `scripts/bootstrap.sh` and `scripts/bootstrap.bat`.
 
+### Offline / air-gapped install
+
+The repository can carry its own Python interpreter and wheels so it bootstraps
+with **no network at all**. The `vendor/` directory contains:
+
+- `vendor/python/` — CPython 3.12 standalone tarballs for Linux x86_64 and Windows x86_64.
+- `vendor/wheels/` — all runtime, test, dev, and build dependency wheels for
+  CPython 3.12 (Linux and Windows).
+- `vendor/reqs-flat.txt` — the pinned dependency list used for offline installs.
+- `vendor/MANIFEST.txt` and `vendor/MANIFEST.sha256` — integrity manifests.
+
+**On an internet-connected machine**, keep the vendor tree up to date after any
+`pyproject.toml` change:
+
+```bash
+bash scripts/vendor.sh          # Linux / macOS
+# or
+scripts\vendor.bat              # Windows cmd.exe (wrapper around scripts/vendor.ps1)
+# or
+pwsh -File scripts/vendor.ps1    # PowerShell 7+ (or Windows PowerShell 5.1)
+```
+
+**On an offline/air-gapped machine**, run the same bootstrap command with the
+`--offline` flag. The script will refuse to download anything and install Python,
+the venv, and all packages from `vendor/`:
+
+```bash
+# Linux / macOS
+bash scripts/bootstrap.sh --offline
+source scripts/env.sh
+
+# Windows cmd.exe
+scripts\bootstrap.bat --offline
+scripts\env.bat
+```
+
+Verify the vendored files before trusting them in a restricted environment:
+
+```bash
+bash scripts/vendor-verify.sh     # Linux / macOS
+# or
+scripts\vendor-verify.bat         # Windows cmd.exe (wrapper around scripts/vendor-verify.ps1)
+# or
+pwsh -File scripts/vendor-verify.ps1 # PowerShell 7+ (or Windows PowerShell 5.1)
+```
+
+A corrupted or missing file will cause the verify script to exit non-zero.
+
 ### Install with pip (any Python ≥ 3.11)
 
 ```bash

@@ -21,6 +21,12 @@ export UV_TOOL_BIN_DIR="$ROOT/.uv-tools/bin"
 export UV_NO_MODIFY_PATH=1
 export UV_PYTHON_PREFERENCE="${UV_PYTHON_PREFERENCE:-only-managed}"
 
+# If a vendored python-build-standalone mirror exists, use it so uv never
+# needs to hit the CDN for the managed interpreter.
+if [ -d "$ROOT/vendor/python" ]; then
+    export UV_PYTHON_INSTALL_MIRROR="file://$ROOT/vendor/python"
+fi
+
 # Prepend the vendored uv binary directory to PATH only once per session.
 case ":$PATH:" in
     *":$UV_INSTALL_DIR:"*) ;;

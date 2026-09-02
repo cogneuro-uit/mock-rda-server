@@ -22,7 +22,12 @@ set "UV_TOOL_BIN_DIR=%ROOT%\.uv-tools\bin"
 set "UV_NO_MODIFY_PATH=1"
 if not defined UV_PYTHON_PREFERENCE set "UV_PYTHON_PREFERENCE=only-managed"
 
+:: Use the vendored python-build-standalone mirror if it exists.
+if exist "%ROOT%\vendor\python" (
+    set "UV_PYTHON_INSTALL_MIRROR=file://%ROOT%/vendor/python"
+)
+
 :: Prepend the vendored uv directory to PATH only once per session.
 echo "!PATH!" | findstr /I /C:"%UV_INSTALL_DIR%" >nul || set "PATH=%UV_INSTALL_DIR%;%PATH%"
 
-endlocal & set "UV_INSTALL_DIR=%UV_INSTALL_DIR%" & set "UV_CACHE_DIR=%UV_CACHE_DIR%" & set "UV_PYTHON_INSTALL_DIR=%UV_PYTHON_INSTALL_DIR%" & set "UV_NO_MODIFY_PATH=%UV_NO_MODIFY_PATH%" & set "UV_PYTHON_PREFERENCE=%UV_PYTHON_PREFERENCE%" & set "PATH=%PATH%"
+endlocal & set "UV_INSTALL_DIR=%UV_INSTALL_DIR%" & set "UV_CACHE_DIR=%UV_CACHE_DIR%" & set "UV_PYTHON_INSTALL_DIR=%UV_PYTHON_INSTALL_DIR%" & set "UV_NO_MODIFY_PATH=%UV_NO_MODIFY_PATH%" & set "UV_PYTHON_PREFERENCE=%UV_PYTHON_PREFERENCE%" & set "UV_PYTHON_INSTALL_MIRROR=%UV_PYTHON_INSTALL_MIRROR%" & set "PATH=%PATH%"
