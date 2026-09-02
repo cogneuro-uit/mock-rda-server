@@ -89,6 +89,12 @@ Requires Python ≥ 3.11. A conda environment is pinned in `environment.yml`.
 
 ## Usage
 
+The commands below assume the environment is active. With the **portable
+install**, prefix them with `uv run` (after `source scripts/env.sh`), or call
+the venv binaries directly — `.venv/bin/mock-rda` / `.venv/bin/python`
+(`.venv\Scripts\mock-rda.exe` / `.venv\Scripts\python.exe` on Windows) — no
+env vars needed.
+
 ```bash
 # Stream a recorded triplet (loops seamlessly with --loop)
 mock-rda file example_data/thea_session_2.vhdr --loop --block-ms 4
@@ -102,7 +108,8 @@ The server listens on TCP **51244** (the 32-bit float port). Connect the bundled
 client to watch the stream:
 
 ```bash
-python examples/minimal_client.py --host 127.0.0.1 --port 51244
+uv run python examples/minimal_client.py --host 127.0.0.1 --port 51244
+# or equivalently: .venv/bin/python examples/minimal_client.py --host 127.0.0.1 --port 51244
 ```
 
 ### Manual trigger injection
