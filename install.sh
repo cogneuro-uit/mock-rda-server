@@ -6,6 +6,10 @@
 
 cd "$(dirname "$0")" || exit 1
 echo "Installing mock-rda (project-local, no admin) ..."
-bash scripts/bootstrap.sh --offline
+if [[ $# -eq 0 ]]; then
+    bash scripts/bootstrap.sh --offline
+else
+    bash scripts/bootstrap.sh "$@"
+fi
 echo
 echo "Done. Double-click run-server.sh (or ./run-server.sh) to start streaming."

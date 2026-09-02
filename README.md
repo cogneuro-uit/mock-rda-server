@@ -171,6 +171,27 @@ The launchers (`run-server.bat`/`run-server.sh`) deliberately call
 small unsigned launcher that antivirus and policies commonly block, while
 `python.exe` itself has already proven to run during install.
 
+**"Blocked managed Python (os error 5) but system Python exists"**: run
+`scripts\diagnose.bat` step [5] to see system Pythons. If a CPython 3.12 is
+listed, bootstrap against the signed system interpreter instead of the managed
+one:
+
+```cmd
+install.bat --system-python
+```
+
+Linux / macOS:
+
+```bash
+./install.sh --system-python
+```
+
+The venv then uses the IT-installed, signed system interpreter, which
+antivirus does not block, and offline installs still work because the vendored
+wheels are `cp312`. If only 3.11 is present, the offline wheelhouse cannot be
+used (wheels are `cp312`) — bootstrap online instead, or ask IT for 3.12 or an
+AV exclusion.
+
 **"Running scripts is disabled"**: PowerShell execution policy — the
 project's `.bat` files are pure cmd and need neither PowerShell nor
 relaxed policies.

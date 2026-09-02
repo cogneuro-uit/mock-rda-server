@@ -6,6 +6,10 @@
 
 cd /d "%~dp0"
 echo Installing mock-rda (project-local, no admin) ...
-call scripts\bootstrap.bat --offline
+if "%~1"=="" (
+    call scripts\bootstrap.bat --offline
+) else (
+    call scripts\bootstrap.bat %*
+)
 echo.
 pause

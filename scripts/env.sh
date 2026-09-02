@@ -19,7 +19,15 @@ export UV_PYTHON_INSTALL_DIR="$ROOT/.uv-python"
 export UV_TOOL_DIR="$ROOT/.uv-tools"
 export UV_TOOL_BIN_DIR="$ROOT/.uv-tools/bin"
 export UV_NO_MODIFY_PATH=1
-export UV_PYTHON_PREFERENCE="${UV_PYTHON_PREFERENCE:-only-managed}"
+
+# System-python mode: forbid managed interpreters entirely. This must REPLACE
+# UV_PYTHON_PREFERENCE because uv errors when both are set.
+if [ -n "${MOCK_RDA_SYSTEM_PYTHON:-}" ]; then
+    unset UV_PYTHON_PREFERENCE
+    export UV_NO_MANAGED_PYTHON=1
+else
+    export UV_PYTHON_PREFERENCE="${UV_PYTHON_PREFERENCE:-only-managed}"
+fi
 
 # If a vendored python-build-standalone mirror exists, use it so uv never
 # needs to hit the CDN for the managed interpreter.
