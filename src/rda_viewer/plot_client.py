@@ -25,6 +25,7 @@ import numpy as np
 
 from mock_rda.protocol import MsgType
 
+from .errors import RDAConnectionError, RDATimeoutError
 from .minimal_client import RDAClient
 
 
@@ -54,15 +55,23 @@ def main() -> None:
         matplotlib.use("Agg")
     import matplotlib.pyplot as plt
 
-    client = RDAClient(args.host, args.port)
+    try:
+        client = RDAClient(args.host, args.port)
+    except RDAConnectionError as exc:
+        print(str(exc), file=sys.stderr)
+        raise SystemExit(2) from exc
     msgs = client.messages()
-    for mtype, fields in msgs:  # pull START to learn the configuration
-        if mtype == MsgType.START:
-            sfreq = fields["sample_rate"]
-            n_plot = min(args.channels, fields["n_channels"])
-            break
-    else:
-        return
+    try:
+        for mtype, fields in msgs:  # pull START to learn the configuration
+            if mtype == MsgType.START:
+                sfreq = fields["sample_rate"]
+                n_plot = min(args.channels, fields["n_channels"])
+                break
+        else:
+            return
+    except RDATimeoutError as exc:
+        print(str(exc), file=sys.stderr)
+        raise SystemExit(3) from exc
 
     win = int(args.seconds * sfreq)
     buf = np.zeros((n_plot, win), dtype=np.float32)
@@ -104,6 +113,9 @@ def main() -> None:
 
             if args.max_blocks and n_blocks >= args.max_blocks:
                 break
+    except RDATimeoutError as exc:
+        print(str(exc), file=sys.stderr)
+        raise SystemExit(3) from exc
     except KeyboardInterrupt:
         pass
     finally:

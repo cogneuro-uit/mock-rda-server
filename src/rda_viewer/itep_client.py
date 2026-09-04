@@ -62,6 +62,7 @@ import numpy as np
 
 from mock_rda.protocol import MsgType
 
+from .errors import RDAConnectionError, RDATimeoutError
 from .gui_client import build_montage, flow_status, nearest_channel
 from .minimal_client import RDAClient
 
@@ -547,17 +548,25 @@ def run_gui(args):
     post_ms = max(post_ms, burst_emg_window[1], burst_tep_window[1],
                   burst_last + short_window[1], burst_last + burst_topo_lat)
 
-    client = RDAClient(args.host, args.port)
+    try:
+        client = RDAClient(args.host, args.port)
+    except RDAConnectionError as exc:
+        print(str(exc), file=sys.stderr)
+        raise SystemExit(2) from exc
     msgs = client.messages()
-    for mtype, f in msgs:  # consume START
-        if mtype == MsgType.START:
-            sfreq = f["sample_rate"]
-            channel_names = f["channel_names"]
-            res = np.asarray(f["resolutions"], dtype=np.float64)
-            break
-    else:
-        print("server closed before START", file=sys.stderr)
-        return
+    try:
+        for mtype, f in msgs:  # consume START
+            if mtype == MsgType.START:
+                sfreq = f["sample_rate"]
+                channel_names = f["channel_names"]
+                res = np.asarray(f["resolutions"], dtype=np.float64)
+                break
+        else:
+            print("server closed before START", file=sys.stderr)
+            return
+    except RDATimeoutError as exc:
+        print(str(exc), file=sys.stderr)
+        raise SystemExit(3) from exc
 
     eeg_names, pos, full_idx = build_montage(channel_names, sfreq)
     default_electrode = args.electrode if args.electrode in eeg_names else (
@@ -625,7 +634,7 @@ def run_gui(args):
     mode_btn.grid(row=0, column=0, sticky="we")
 
     state = {"epoch": None}
-    flow = {"last": None, "blocks": 0, "interval": 0.02, "ended": False}
+    flow = {"last": None, "blocks": 0, "interval": 0.02, "ended": False, "error": None}
     new_epoch = queue.Queue(maxsize=1)
     redrawing = {"busy": False}
 
@@ -705,15 +714,18 @@ def run_gui(args):
         def trigger_pred(m):
             return m["type"] != "New Segment"  # react to all triggers
 
-        for epoch, _marker, offsets in epoch_stream_pre_post(msgs, pre_samples, post_samples,
-                                                             trigger_pred, on_data=on_data):
-            state["epoch"] = (epoch, offsets)
-            if new_epoch.full():
-                try:
-                    new_epoch.get_nowait()
-                except queue.Empty:
-                    pass
-            new_epoch.put(epoch)
+        try:
+            for epoch, _marker, offsets in epoch_stream_pre_post(msgs, pre_samples, post_samples,
+                                                                 trigger_pred, on_data=on_data):
+                state["epoch"] = (epoch, offsets)
+                if new_epoch.full():
+                    try:
+                        new_epoch.get_nowait()
+                    except queue.Empty:
+                        pass
+                new_epoch.put(epoch)
+        except RDATimeoutError as exc:
+            flow["error"] = str(exc)
         flow["ended"] = True
 
     threading.Thread(target=net_loop, name="net", daemon=True).start()

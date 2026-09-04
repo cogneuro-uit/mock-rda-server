@@ -12,6 +12,7 @@ import sys
 
 from mock_rda.protocol import MsgType
 
+from .errors import RDAConnectionError, RDATimeoutError
 from .minimal_client import RDAClient
 
 
@@ -21,7 +22,12 @@ def main():
     ap.add_argument("--port", type=int, default=51244)
     a = ap.parse_args()
 
-    client = RDAClient(a.host, a.port)
+    try:
+        client = RDAClient(a.host, a.port)
+    except RDAConnectionError as exc:
+        print(str(exc), file=sys.stderr)
+        raise SystemExit(2) from exc
+
     msgs = client.messages()
     for mtype, f in msgs:
         if mtype == MsgType.START:
@@ -47,6 +53,9 @@ def main():
                 prev = s
                 n += 1
             total += f["n_points"]
+    except RDATimeoutError as exc:
+        print(str(exc), file=sys.stderr)
+        raise SystemExit(3) from exc
     except KeyboardInterrupt:
         pass
     finally:

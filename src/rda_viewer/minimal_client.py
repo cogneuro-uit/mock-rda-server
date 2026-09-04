@@ -15,15 +15,30 @@ from __future__ import annotations
 
 import argparse
 import socket
+import sys
 
 from mock_rda.protocol import MsgType, RDAFramer, parse_message
+
+from .errors import (
+    RDAConnectionError,
+    RDATimeoutError,
+    connect_client,
+    friendly_no_start_message,
+)
 
 
 class RDAClient:
     """Tiny blocking RDA client yielding parsed ``(msg_type, fields)`` messages."""
 
-    def __init__(self, host: str = "127.0.0.1", port: int = 51244, timeout: float = 5.0) -> None:
-        self.sock = socket.create_connection((host, port), timeout=timeout)
+    def __init__(
+        self,
+        host: str = "127.0.0.1",
+        port: int = 51244,
+        timeout: float = 5.0,
+    ) -> None:
+        self._host = host
+        self._port = port
+        self.sock = connect_client(host, port, timeout=timeout)
         self.sock.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
         self._framer = RDAFramer()
         self.n_channels: int | None = None
@@ -36,6 +51,11 @@ class RDAClient:
         while True:
             try:
                 chunk = self.sock.recv(65536)
+            except TimeoutError:
+                # The socket has hit its read timeout without any data. Let the
+                # caller distinguish this from an ordinary end-of-stream so the
+                # GUIs can tell the user the stream is silent.
+                raise RDATimeoutError(friendly_no_start_message(self._host, self._port)) from None
             except OSError:
                 # timeout, or the socket was closed (e.g. on shutdown) -> stop.
                 return
@@ -57,6 +77,15 @@ class RDAClient:
             pass
 
 
+def _cli_connect(host: str, port: int, timeout: float) -> RDAClient:
+    """Open a client for the CLI, mapping the first failure to a friendly message."""
+    try:
+        return RDAClient(host, port, timeout=timeout)
+    except RDAConnectionError as exc:
+        print(str(exc), file=sys.stderr)
+        raise SystemExit(2) from exc
+
+
 def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--host", default="127.0.0.1")
@@ -71,7 +100,7 @@ def main() -> None:
     )
     args = ap.parse_args()
 
-    client = RDAClient(args.host, args.port, timeout=args.timeout)
+    client = _cli_connect(args.host, args.port, timeout=args.timeout)
     n_blocks = 0
     try:
         for mtype, fields in client.messages():
@@ -105,6 +134,9 @@ def main() -> None:
                 payload = fields["payload"]
                 name = MsgType(mtype).name if mtype in set(MsgType) else "UNKNOWN"
                 print(f"{name}({mtype}): {len(payload)} bytes payload\n  {payload[:64].hex(' ')}")
+    except RDATimeoutError as exc:
+        print(str(exc), file=sys.stderr)
+        raise SystemExit(3) from exc
     except KeyboardInterrupt:
         pass
     finally:

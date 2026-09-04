@@ -33,6 +33,7 @@ import numpy as np
 
 from mock_rda.protocol import MsgType
 
+from .errors import RDAConnectionError, RDATimeoutError
 from .minimal_client import RDAClient
 
 
@@ -71,6 +72,8 @@ def flow_status(flow: dict, now: float):
     iv = flow["interval"] or 0.02
     warn_after = max(0.4, 6 * iv)
     dead_after = max(1.5, 25 * iv)
+    if flow.get("error"):
+        return f"RDA: {flow['error']}", "red"
     if flow["last"] is None:
         return "RDA: waiting for data…", "red"
     dt = now - flow["last"]
@@ -228,17 +231,25 @@ def run_gui(args):
     from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
     from matplotlib.figure import Figure
 
-    client = RDAClient(args.host, args.port)
+    try:
+        client = RDAClient(args.host, args.port)
+    except RDAConnectionError as exc:
+        print(str(exc), file=sys.stderr)
+        raise SystemExit(2) from exc
     msgs = client.messages()
-    for mtype, f in msgs:  # consume START
-        if mtype == MsgType.START:
-            sfreq = f["sample_rate"]
-            channel_names = f["channel_names"]
-            res = np.asarray(f["resolutions"], dtype=np.float64)
-            break
-    else:
-        print("server closed before START", file=sys.stderr)
-        return
+    try:
+        for mtype, f in msgs:  # consume START
+            if mtype == MsgType.START:
+                sfreq = f["sample_rate"]
+                channel_names = f["channel_names"]
+                res = np.asarray(f["resolutions"], dtype=np.float64)
+                break
+        else:
+            print("server closed before START", file=sys.stderr)
+            return
+    except RDATimeoutError as exc:
+        print(str(exc), file=sys.stderr)
+        raise SystemExit(3) from exc
 
     eeg_names, pos, full_idx = build_montage(channel_names, sfreq)
     default_el = args.electrode if args.electrode in eeg_names else (
@@ -295,7 +306,8 @@ def run_gui(args):
         fr.pack(side=tk.LEFT, padx=6, pady=4)
 
     state = {"epoch": None}  # latest raw epoch (n_ch, window), set by net thread
-    flow = {"last": None, "blocks": 0, "interval": 0.02, "ended": False}  # data-flow monitor
+    # data-flow monitor
+    flow = {"last": None, "blocks": 0, "interval": 0.02, "ended": False, "error": None}
     new_epoch = queue.Queue(maxsize=1)
 
     def window_samples():
@@ -380,15 +392,18 @@ def run_gui(args):
         def on_unmatched(m):
             print(f"  ignoring {m['type']}/{m['description']!r} (not the trigger)",
                   file=sys.stderr)
-        for epoch, _marker in epoch_stream(msgs, window_samples,
-                                            _make_trigger_pred(args), on_unmatched, on_data):
-            state["epoch"] = epoch
-            if new_epoch.full():
-                try:
-                    new_epoch.get_nowait()
-                except queue.Empty:
-                    pass
-            new_epoch.put(epoch)
+        try:
+            for epoch, _marker in epoch_stream(msgs, window_samples,
+                                                _make_trigger_pred(args), on_unmatched, on_data):
+                state["epoch"] = epoch
+                if new_epoch.full():
+                    try:
+                        new_epoch.get_nowait()
+                    except queue.Empty:
+                        pass
+                new_epoch.put(epoch)
+        except RDATimeoutError as exc:
+            flow["error"] = str(exc)
         flow["ended"] = True  # stream closed / server gone
 
     threading.Thread(target=net_loop, name="net", daemon=True).start()
