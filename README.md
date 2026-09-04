@@ -1,13 +1,70 @@
-# mock-rda — a mock BrainVision RDA server
+# rda-viewer — BrainVision RDA Live Visualizer
 
-A standalone, MIT-licensed Python package that emulates the **server** side of
-Brain Products' Remote Data Access (RDA) protocol, so a closed-loop / iTEP
-client can be developed without a live amplifier. It streams from a recorded
-`.eeg`/`.vhdr`/`.vmrk` triplet **or** a synthetic generator, with inline marker
-(trigger) streaming and a manual-injection interface for simulating TMS pulses.
+Connect to a BrainVision Recorder's **Remote Data Access (RDA)** stream and watch
+trigger-locked epochs update live. `rda-viewer` is the main GUI: three linked
+panels showing a butterfly overlay, an MNE scalp topomap, and a selected
+electrode trace. For TMS experiments there are TEP/MEP monitoring views
+(`rda-itep`, `rda-tep`), a free-running scope (`rda-plot`), and utilities for
+markers and raw-socket inspection (`rda-markers`, `rda-dump`).
+
+The package still bundles a small **mock RDA server** so you can develop and demo
+the visualizers without an amplifier. It streams from a recorded
+`.eeg`/`.vhdr`/`.vmrk` triplet or a synthetic source, with inline markers and a
+manual trigger-injection interface for simulating TMS pulses.
 
 The wire format is a **clean-room re-implementation** from the published field
 layout (see [`protocol.py`](src/mock_rda/protocol.py)); no GPL code is copied.
+
+## Quick start
+
+```bash
+pip install git+https://github.com/cogneuro-uit/mock-rda-server.git
+rda-viewer                      # or: rda-itep, rda-tep, rda-plot, rda-markers
+```
+
+The viewers expect a Recorder RDA stream on TCP **51244** (the 32-bit float port)
+at host `127.0.0.1`. Point them elsewhere with `--host` and `--port`:
+
+```bash
+rda-viewer --host 10.0.0.5 --port 51244
+```
+
+No amplifier connected? Start the bundled mock on the same port and re-run the
+viewer:
+
+```bash
+mock-rda synth --port 51244              # synthetic stream (32 ch, 5 kHz)
+# or replay a recording in a loop:
+mock-rda file example_data/thea_session_2.vhdr --loop --port 51244
+```
+
+If nothing is streaming, the viewers exit with an actionable hint, for example:
+"No BrainVision Recorder appears to be streaming there. If the amplifier is not
+connected, you can develop against the bundled mock stream: `mock-rda synth
+--port 51244` ..."
+
+## The viewers
+
+All viewers share the same `--host` / `--port` defaults and the same friendly
+connection-error messages.
+
+- `rda-viewer` — epoch viewer. Waits for a marker (default `Stimulus`), then
+  shows the post-trigger window in three linked panels: a butterfly overlay of
+  all EEG channels, an MNE topomap at the peak global-field-power latency
+  (click to select an electrode), and the selected electrode trace. Per-panel
+  y-limits can be set manually or auto-scaled; a "sync" checkbox ties all
+  panels to one range.
+- `rda-itep` — TMS/EMG monitor. Single-pulse mode shows topomaps at fixed
+  latencies, every EMG channel with MEP guide lines, selected-electrode iTEP/TEP
+  traces, and GMFP. A button switches to burst mode, which overlays expected
+  vs. actual pulse times and shows per-pulse averages.
+- `rda-tep` — TMS-locked epoch viewer (butterfly only). Works live or headless
+  (`--save /tmp/tep.png`); useful in a container with no display.
+- `rda-plot` — free-running rolling scope of the first few channels.
+- `rda-markers` — prints every marker with absolute sample, wall-clock time,
+  and gap since the previous marker.
+- `rda-dump` — minimal raw-socket reference client that prints parsed blocks
+  and markers to the terminal.
 
 ## Install
 
@@ -27,7 +84,10 @@ pip install -e ".[test]"    # + pytest, mne, mne-lsl, for the test suite
 
 Requires Python ≥ 3.11. A conda environment is pinned in `environment.yml`.
 
-## Usage
+## The bundled mock RDA stream
+
+The mock server is a development/demo aid, not a replacement for a real
+amplifier. It lets the visualizers run on any laptop.
 
 ```bash
 # Stream a recorded triplet (loops seamlessly with --loop)
@@ -38,13 +98,7 @@ mock-rda synth --channels 32 --rate 5000 --block-ms 4 \
     --stim-period 2.0 --tep-template default
 ```
 
-The server listens on TCP **51244** (the 32-bit float port). Connect the bundled
-client to watch the stream:
-
-```bash
-rda-dump --host 127.0.0.1 --port 51244
-# or equivalently: python -m rda_viewer.minimal_client --host 127.0.0.1 --port 51244
-```
+The server listens on TCP **51244** by default.
 
 ### Manual trigger injection
 
@@ -119,13 +173,14 @@ file's own MULTIPLEXED layout.
 null-terminated UTF-8 `description` string.
 
 > The streamed values are the **raw** stored samples; the client multiplies by
-> the per-channel resolution from START to get µV — exactly what a real Recorder
-> does. The START name encoding is a tested, swappable function
-> (`encode_channel_names`); see the START quirk note below.
+the per-channel resolution from START to get µV — exactly what a real Recorder
+does. The START name encoding is a tested, swappable function
+(`encode_channel_names`); see the START quirk note below.
 
 ## Validation
 
-Two tiers:
+Protocol correctness is validated in two tiers, so the visualizers can trust the
+bytes they receive:
 
 - **Default tier** (pure Python, gates CI): spec byte-vectors, encode/decode
   round-trip, file-source exactness against the fixture, marker alignment across
@@ -159,14 +214,23 @@ diffing START's cp1252-vs-INFO's UTF-16LE encoding, INFO (type 9) presence,
 and a RecView/LSL-BrainVisionRDA smoke test.
 
 > **START encoding quirk to verify with a real capture:** the reference
-> server's START uses cp1252 names while its INFO (type 9) uses UTF-16LE names +
-> a units array. We emit START per the field layout above and make the encoding
-> swappable (`--name-encoding`); confirm what your target client reads (type 1,
-> type 9, or both).
+server's START uses cp1252 names while its INFO (type 9) uses UTF-16LE names +
+a units array. We emit START per the field layout above and make the encoding
+swappable (`--name-encoding`); confirm what your target client reads (type 1,
+type 9, or both).
 
 ## Repository layout
 
 ```
+src/rda_viewer/
+  __init__.py        # live visualizer package
+  errors.py          # friendly, actionable connection-error messages
+  minimal_client.py  # raw-socket reference client (also used by the tests)
+  gui_client.py      # Tk epoch viewer: butterfly / topomap / electrode
+  itep_client.py     # TMS/EMG epoch viewer (TEP + MEP monitoring)
+  tep_client.py      # TMS-locked epoch viewer (headless-capable)
+  plot_client.py     # free-running rolling scope
+  dump_markers.py    # marker stream dumper
 src/mock_rda/
   protocol.py     # GUID, enums, struct formats, encode_*/decode_*, RDAFramer (pure, no I/O)
   markers.py      # Marker dataclass + thread-safe injection queue (single + burst)
@@ -176,22 +240,18 @@ src/mock_rda/
   gui.py          # Tk control panel: inject single/burst triggers, live status
   cli.py          # `mock-rda` entry point
   sources/        # base, synthetic (pink noise + TEP), file_source (.vhdr/.eeg/.vmrk)
-src/rda_viewer/
-  minimal_client.py  # raw-socket reference client (also used by the tests)
-  gui_client.py      # Tk epoch viewer: butterfly / topomap / electrode
-  itep_client.py    # TMS/EMG epoch viewer (TEP + MEP monitoring)
-  tep_client.py     # TMS-locked epoch viewer (headless-capable)
-  plot_client.py    # free-running rolling scope
-  dump_markers.py   # marker stream dumper
 tests/                # see Validation above
 example_data/         # a short BrainVision triplet fixture (32 ch, 50 kHz)
 ```
 
 ## Non-goals
 
-Emulating amplifier-noise / TMS-artifact morphology or hardware trigger latency;
-impedance (types 6–8) and DATA16 emission (parse/skip only); the iTEP processing
-client itself (separate repo).
+The visualizers are live inspection tools, not analysis pipelines: no offline
+epoch averaging, statistical testing, or automated MEP/TEP scoring. Emulating
+amplifier-noise / TMS-artifact morphology or hardware trigger latency stays out
+of scope for the bundled mock; impedance (types 6–8) and DATA16 emission remain
+parse/skip only. A full iTEP processing/closed-loop client belongs in a separate
+repo.
 
 ## License
 
