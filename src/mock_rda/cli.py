@@ -22,8 +22,7 @@ import time
 from .injector import ControlSocketServer, keypress_loop
 from .markers import Marker
 from .server import RDA_FLOAT_PORT, Server
-from .sources import (FileSource, SyntheticSource, TEPTemplate,
-                      default_channel_names)
+from .sources import FileSource, SyntheticSource, TEPTemplate, default_channel_names
 
 
 def _block_points(sample_rate: float, block_ms: float) -> int:
