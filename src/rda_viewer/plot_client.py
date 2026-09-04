@@ -4,12 +4,12 @@
 Live window (needs a working display):
 
     pip install matplotlib
-    python examples/plot_client.py --host 127.0.0.1 --port 51244 --seconds 5
+    python -m rda_viewer.plot_client --host 127.0.0.1 --port 51244 --seconds 5
 
 Headless — render to an image file instead (works in a container with no X
 display; open/refresh the PNG in your editor):
 
-    python examples/plot_client.py --save /tmp/rda.png --refresh-blocks 20
+    python -m rda_viewer.plot_client --save /tmp/rda.png --refresh-blocks 20
 
 Plots a rolling window of the first few channels and draws a vertical line at
 each received marker. This is a debugging aid, not part of the test suite.
@@ -22,9 +22,10 @@ import os
 import sys
 
 import numpy as np
-from minimal_client import RDAClient
 
 from mock_rda.protocol import MsgType
+
+from .minimal_client import RDAClient
 
 
 def main() -> None:

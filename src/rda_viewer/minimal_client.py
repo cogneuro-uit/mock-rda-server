@@ -5,7 +5,7 @@ Stdlib + the ``mock_rda`` package only. It reuses the shared ``RDAFramer`` /
 ``parse_message`` so the protocol is parsed exactly once, in one place. Run it
 against a live mock server::
 
-    python examples/minimal_client.py --host 127.0.0.1 --port 51244
+    python -m rda_viewer.minimal_client --host 127.0.0.1 --port 51244
 
 The :class:`RDAClient` class is also imported by the test suite as the in-repo
 reference client (see ``tests/test_file_source_exact.py``).

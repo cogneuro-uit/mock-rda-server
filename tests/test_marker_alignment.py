@@ -5,12 +5,11 @@ from __future__ import annotations
 
 import threading
 
-from minimal_client import RDAClient
-
 from mock_rda.markers import AT_NEXT, InjectionQueue, Marker
 from mock_rda.protocol import MsgType
 from mock_rda.server import Server
 from mock_rda.sources import SyntheticSource
+from rda_viewer.minimal_client import RDAClient
 
 
 def test_injection_queue_block_relative_offsets():

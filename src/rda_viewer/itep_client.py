@@ -43,10 +43,10 @@ excluding a small window around each pulse (default +/-2 ms, where the TMS
 artifact lives).
 
 Toolkits: Tkinter (Python stdlib) + matplotlib + MNE for the topomaps — same
-dependencies as ``gui_client.py``, which this module reuses for the montage
+dependencies as ``rda_viewer.gui_client``, which this module reuses for the montage
 lookup and the data-flow indicator.
 
-    python examples/itep_client.py --emg-electrodes 'EMG*' --electrode C3
+    python -m rda_viewer.itep_client --emg-electrodes 'EMG*' --electrode C3
 """
 
 from __future__ import annotations
@@ -59,10 +59,11 @@ import threading
 import time
 
 import numpy as np
-from gui_client import build_montage, flow_status, nearest_channel
-from minimal_client import RDAClient
 
 from mock_rda.protocol import MsgType
+
+from .gui_client import build_montage, flow_status, nearest_channel
+from .minimal_client import RDAClient
 
 
 # --------------------------------------------------------------------------- #
@@ -644,7 +645,7 @@ def run_gui(args):
 
     def redraw():
         # Setting min/max StringVars below fires their write-traces, which call
-        # redraw again; guard against that reentrancy (see gui_client.py).
+        # redraw again; guard against that reentrancy (see rda_viewer.gui_client).
         if redrawing["busy"]:
             return
         epoch = state["epoch"]

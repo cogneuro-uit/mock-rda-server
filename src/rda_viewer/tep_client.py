@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """TMS-locked epoch viewer — redraw only on a TMS marker, show the post-TMS window.
 
-Unlike ``plot_client.py`` (a free-running rolling scope), this client stays idle
+Unlike ``rda_viewer.plot_client`` (a free-running rolling scope), this client stays idle
 until a TMS/stimulus marker arrives, then captures the epoch around it and draws
 a butterfly plot (all channels overlaid). The y-scale is set from the **bulk** of
 the signal — a percentile range computed *after* a short blanking window — so the
@@ -15,11 +15,11 @@ rewritten on every TMS, and open/refresh it in your editor::
     mock-rda synth --channels 32 --rate 5000 --block-ms 4 --stim-period 0.5
 
     # terminal B
-    python examples/tep_client.py --save /tmp/tep.png
+    python -m rda_viewer.tep_client --save /tmp/tep.png
 
 Live window (needs a working X display)::
 
-    python examples/tep_client.py --host 127.0.0.1 --port 51244
+    python -m rda_viewer.tep_client --host 127.0.0.1 --port 51244
 
 This is a debugging/eyeballing aid, not part of the test suite.
 """
@@ -31,9 +31,10 @@ import os
 import sys
 
 import numpy as np
-from minimal_client import RDAClient
 
 from mock_rda.protocol import MsgType
+
+from .minimal_client import RDAClient
 
 
 def _is_tms(marker: dict, args) -> bool:

@@ -42,7 +42,8 @@ The server listens on TCP **51244** (the 32-bit float port). Connect the bundled
 client to watch the stream:
 
 ```bash
-python examples/minimal_client.py --host 127.0.0.1 --port 51244
+rda-dump --host 127.0.0.1 --port 51244
+# or equivalently: python -m rda_viewer.minimal_client --host 127.0.0.1 --port 51244
 ```
 
 ### Manual trigger injection
@@ -175,8 +176,13 @@ src/mock_rda/
   gui.py          # Tk control panel: inject single/burst triggers, live status
   cli.py          # `mock-rda` entry point
   sources/        # base, synthetic (pink noise + TEP), file_source (.vhdr/.eeg/.vmrk)
-examples/
-  minimal_client.py   # raw-socket reference client (also used by the tests)
+src/rda_viewer/
+  minimal_client.py  # raw-socket reference client (also used by the tests)
+  gui_client.py      # Tk epoch viewer: butterfly / topomap / electrode
+  itep_client.py    # TMS/EMG epoch viewer (TEP + MEP monitoring)
+  tep_client.py     # TMS-locked epoch viewer (headless-capable)
+  plot_client.py    # free-running rolling scope
+  dump_markers.py   # marker stream dumper
 tests/                # see Validation above
 example_data/         # a short BrainVision triplet fixture (32 ch, 50 kHz)
 ```

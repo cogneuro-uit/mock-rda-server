@@ -4,11 +4,11 @@ reference client, and assert received samples == file and markers == .vmrk."""
 from __future__ import annotations
 
 import numpy as np
-from minimal_client import RDAClient
 
 from mock_rda.protocol import MsgType
 from mock_rda.server import Server
 from mock_rda.sources import FileSource
+from rda_viewer.minimal_client import RDAClient
 
 BLOCK_POINTS = 500  # divides the 20000-sample fixture evenly
 

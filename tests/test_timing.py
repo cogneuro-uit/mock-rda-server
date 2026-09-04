@@ -6,12 +6,11 @@ from __future__ import annotations
 
 import time
 
-from minimal_client import RDAClient
-
 from mock_rda.markers import AT_NEXT, Marker
 from mock_rda.protocol import MsgType
 from mock_rda.server import Server
 from mock_rda.sources import SyntheticSource
+from rda_viewer.minimal_client import RDAClient
 
 
 def _make_server(rate=2000.0, block_points=100):

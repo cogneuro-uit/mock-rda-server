@@ -17,7 +17,7 @@ Toolkits: Tkinter (Python stdlib) + matplotlib (already a dependency) + MNE for
 the topomap — no extra installs. Needs a working display; in a headless
 container see the note at the bottom of ``README``/the plotting discussion.
 
-    python examples/gui_client.py --trigger Stimulus --window-ms 10 --electrode C3
+    python -m rda_viewer.gui_client --trigger Stimulus --window-ms 10 --electrode C3
 """
 
 from __future__ import annotations
@@ -30,9 +30,10 @@ import threading
 import time
 
 import numpy as np
-from minimal_client import RDAClient
 
 from mock_rda.protocol import MsgType
+
+from .minimal_client import RDAClient
 
 
 # --------------------------------------------------------------------------- #

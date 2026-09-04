@@ -5,12 +5,12 @@ build-backend = "hatchling.build"
 [project]
 name = "mock-rda"
 version = "0.1.0"
-description = "Mock BrainVision RDA (Remote Data Access) server for closed-loop / iTEP client development without a live amplifier."
+description = "BrainVision RDA live visualizer with a bundled mock RDA stream for development without hardware."
 readme = "README.md"
 requires-python = ">=3.11"
 license = { text = "MIT" }
 authors = [{ name = "Matthias Mittner", email = "matthias.mittner@uit.no" }]
-keywords = ["eeg", "brainvision", "rda", "tms", "itep", "closed-loop", "neurofeedback"]
+keywords = ["eeg", "brainvision", "rda", "tms", "itep", "closed-loop", "neurofeedback", "visualizer"]
 classifiers = [
     "License :: OSI Approved :: MIT License",
     "Programming Language :: Python :: 3",
@@ -31,12 +31,18 @@ test = ["pytest>=7", "mne>=1.5", "mne-lsl>=1.5"]
 
 [project.scripts]
 mock-rda = "mock_rda.cli:main"
+rda-viewer = "rda_viewer.gui_client:main"
+rda-itep = "rda_viewer.itep_client:main"
+rda-tep = "rda_viewer.tep_client:main"
+rda-plot = "rda_viewer.plot_client:main"
+rda-markers = "rda_viewer.dump_markers:main"
+rda-dump = "rda_viewer.minimal_client:main"
 
 [project.urls]
 Homepage = "https://github.com/cogneuro-uit/mock-rda-server"
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/mock_rda"]
+packages = ["src/mock_rda", "src/rda_viewer"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

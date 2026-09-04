@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Print every marker the RDA stream delivers, with gaps between consecutive ones.
 
-    python dump_markers.py --host 127.0.0.1 --port 51244
+    python -m rda_viewer.dump_markers --host 127.0.0.1 --port 51244
 
 Each line: absolute sample, time since the previous marker (ms), type, description.
 A burst shows up as a cluster; a stimulator that emits up+down ramps shows pairs
@@ -10,11 +10,9 @@ separated by a fraction of a millisecond.
 import argparse
 import sys
 
-sys.path.insert(0, __file__.rsplit("/", 1)[0])
-
-from minimal_client import RDAClient
-
 from mock_rda.protocol import MsgType
+
+from .minimal_client import RDAClient
 
 
 def main():
