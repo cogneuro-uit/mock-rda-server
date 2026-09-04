@@ -45,8 +45,10 @@ connected, you can develop against the bundled mock stream: `mock-rda synth
 
 ## The viewers
 
-All viewers share the same `--host` / `--port` defaults and the same friendly
-connection-error messages.
+All viewers share the same `--host` / `--port` defaults, the same
+`--timeout` socket timeout (default 5 s), and the same friendly connection-error
+messages. Exit code 2 means the TCP port could not be opened; exit code 3 means
+the connection opened but no START/data arrived before the timeout.
 
 - `rda-viewer` — epoch viewer. Waits for a marker (default `Stimulus`), then
   shows the post-trigger window in three linked panels: a butterfly overlay of

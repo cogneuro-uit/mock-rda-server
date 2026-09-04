@@ -3,9 +3,9 @@
 
 Unlike ``rda_viewer.plot_client`` (a free-running rolling scope), this client stays idle
 until a TMS/stimulus marker arrives, then captures the epoch around it and draws
-a butterfly plot (all channels overlaid). The y-scale is set from the **bulk** of
-the signal — a percentile range computed *after* a short blanking window — so the
-large TMS artifact at onset is clipped out of frame instead of squashing the
+a butterfly plot (all channels overlaid). The y-scale is set from the **bulk**
+of the signal — a percentile range computed *after* a short blanking window — so
+the large TMS artifact at onset is clipped out of frame instead of squashing the
 evoked response you actually want to see.
 
 Headless (recommended in a container with no usable display): write a PNG that is
@@ -34,8 +34,7 @@ import numpy as np
 
 from mock_rda.protocol import MsgType
 
-from .errors import RDAConnectionError, RDATimeoutError
-from .minimal_client import RDAClient
+from .errors import EXIT_NO_DATA, RDATimeoutError, open_client_or_exit
 
 
 def _is_tms(marker: dict, args) -> bool:
@@ -69,6 +68,13 @@ def main() -> None:
     ap.add_argument("--save", metavar="PATH", default=None,
                     help="headless: rewrite this PNG on every TMS instead of opening a window")
     ap.add_argument("--max-epochs", type=int, default=0, help="stop after N epochs (0 = run)")
+    ap.add_argument(
+        "--timeout",
+        type=float,
+        default=5.0,
+        help="socket timeout in seconds; raise it against a real Recorder that "
+             "may sit idle before streaming",
+    )
     args = ap.parse_args()
 
     headless = bool(args.save) or not os.environ.get("DISPLAY")
@@ -77,11 +83,7 @@ def main() -> None:
         matplotlib.use("Agg")
     import matplotlib.pyplot as plt
 
-    try:
-        client = RDAClient(args.host, args.port)
-    except RDAConnectionError as exc:
-        print(str(exc), file=sys.stderr)
-        raise SystemExit(2) from exc
+    client = open_client_or_exit(args.host, args.port, timeout=args.timeout)
     msgs = client.messages()
     try:
         for mtype, fields in msgs:  # consume START for the stream configuration
@@ -91,10 +93,11 @@ def main() -> None:
                 res = np.asarray(fields["resolutions"], dtype=np.float64)
                 break
         else:
-            return
+            print("server closed before START", file=sys.stderr)
+            raise SystemExit(EXIT_NO_DATA)
     except RDATimeoutError as exc:
         print(str(exc), file=sys.stderr)
-        raise SystemExit(3) from exc
+        raise SystemExit(EXIT_NO_DATA) from exc
 
     ms = sfreq / 1000.0
     pre = int(round(args.pre_ms * ms))
@@ -210,7 +213,7 @@ def main() -> None:
                     break
     except RDATimeoutError as exc:
         print(str(exc), file=sys.stderr)
-        raise SystemExit(3) from exc
+        raise SystemExit(EXIT_NO_DATA) from exc
     except KeyboardInterrupt:
         pass
     finally:

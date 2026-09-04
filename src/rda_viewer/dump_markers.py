@@ -12,30 +12,42 @@ import sys
 
 from mock_rda.protocol import MsgType
 
-from .errors import RDAConnectionError, RDATimeoutError
-from .minimal_client import RDAClient
+from .errors import (
+    EXIT_NO_DATA,
+    RDATimeoutError,
+    friendly_no_start_message,
+    open_client_or_exit,
+)
 
 
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--host", default="127.0.0.1")
     ap.add_argument("--port", type=int, default=51244)
-    a = ap.parse_args()
+    ap.add_argument(
+        "--timeout",
+        type=float,
+        default=5.0,
+        help="socket timeout in seconds; raise it against a real Recorder that "
+             "may sit idle before streaming",
+    )
+    args = ap.parse_args()
 
-    try:
-        client = RDAClient(a.host, a.port)
-    except RDAConnectionError as exc:
-        print(str(exc), file=sys.stderr)
-        raise SystemExit(2) from exc
+    client = open_client_or_exit(args.host, args.port, timeout=args.timeout)
 
     msgs = client.messages()
-    for mtype, f in msgs:
-        if mtype == MsgType.START:
-            sfreq = f["sample_rate"]
-            print(f"# connected: {len(f['channel_names'])} ch @ {sfreq:g} Hz", file=sys.stderr)
-            break
-    else:
-        raise SystemExit("server closed before START")
+    try:
+        for mtype, f in msgs:
+            if mtype == MsgType.START:
+                sfreq = f["sample_rate"]
+                print(f"# connected: {len(f['channel_names'])} ch @ {sfreq:g} Hz", file=sys.stderr)
+                break
+        else:
+            print("server closed before START", file=sys.stderr)
+            raise SystemExit(EXIT_NO_DATA)
+    except RDATimeoutError as exc:
+        print(friendly_no_start_message(args.host, args.port), file=sys.stderr)
+        raise SystemExit(EXIT_NO_DATA) from exc
 
     total = 0          # absolute sample of the current block's first sample
     prev = None        # absolute sample of the previous marker
@@ -55,7 +67,7 @@ def main():
             total += f["n_points"]
     except RDATimeoutError as exc:
         print(str(exc), file=sys.stderr)
-        raise SystemExit(3) from exc
+        raise SystemExit(EXIT_NO_DATA) from exc
     except KeyboardInterrupt:
         pass
     finally:

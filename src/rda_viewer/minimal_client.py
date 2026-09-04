@@ -20,10 +20,11 @@ import sys
 from mock_rda.protocol import MsgType, RDAFramer, parse_message
 
 from .errors import (
-    RDAConnectionError,
+    EXIT_NO_DATA,
     RDATimeoutError,
     connect_client,
     friendly_no_start_message,
+    open_client_or_exit,
 )
 
 
@@ -57,7 +58,7 @@ class RDAClient:
                 # GUIs can tell the user the stream is silent.
                 raise RDATimeoutError(friendly_no_start_message(self._host, self._port)) from None
             except OSError:
-                # timeout, or the socket was closed (e.g. on shutdown) -> stop.
+                # The socket was closed (e.g. on shutdown) -> stop.
                 return
             if not chunk:
                 return
@@ -77,15 +78,6 @@ class RDAClient:
             pass
 
 
-def _cli_connect(host: str, port: int, timeout: float) -> RDAClient:
-    """Open a client for the CLI, mapping the first failure to a friendly message."""
-    try:
-        return RDAClient(host, port, timeout=timeout)
-    except RDAConnectionError as exc:
-        print(str(exc), file=sys.stderr)
-        raise SystemExit(2) from exc
-
-
 def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--host", default="127.0.0.1")
@@ -96,11 +88,11 @@ def main() -> None:
         type=float,
         default=5.0,
         help="socket timeout in seconds; raise it against a real Recorder that "
-        "may sit idle between connect and Monitor mode",
+        "may sit idle before streaming",
     )
     args = ap.parse_args()
 
-    client = _cli_connect(args.host, args.port, timeout=args.timeout)
+    client = open_client_or_exit(args.host, args.port, timeout=args.timeout)
     n_blocks = 0
     try:
         for mtype, fields in client.messages():
@@ -136,7 +128,7 @@ def main() -> None:
                 print(f"{name}({mtype}): {len(payload)} bytes payload\n  {payload[:64].hex(' ')}")
     except RDATimeoutError as exc:
         print(str(exc), file=sys.stderr)
-        raise SystemExit(3) from exc
+        raise SystemExit(EXIT_NO_DATA) from exc
     except KeyboardInterrupt:
         pass
     finally:

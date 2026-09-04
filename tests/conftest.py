@@ -19,6 +19,7 @@ def fixture_vhdr() -> Path:
     return p
 
 
+@pytest.fixture
 def free_port() -> int:
     """Return an unused localhost TCP port."""
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:

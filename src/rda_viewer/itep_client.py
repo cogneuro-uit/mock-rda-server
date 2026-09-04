@@ -62,9 +62,8 @@ import numpy as np
 
 from mock_rda.protocol import MsgType
 
-from .errors import RDAConnectionError, RDATimeoutError
+from .errors import EXIT_NO_DATA, RDATimeoutError, open_client_or_exit
 from .gui_client import build_montage, flow_status, nearest_channel
-from .minimal_client import RDAClient
 
 
 # --------------------------------------------------------------------------- #
@@ -548,11 +547,7 @@ def run_gui(args):
     post_ms = max(post_ms, burst_emg_window[1], burst_tep_window[1],
                   burst_last + short_window[1], burst_last + burst_topo_lat)
 
-    try:
-        client = RDAClient(args.host, args.port)
-    except RDAConnectionError as exc:
-        print(str(exc), file=sys.stderr)
-        raise SystemExit(2) from exc
+    client = open_client_or_exit(args.host, args.port, timeout=args.timeout)
     msgs = client.messages()
     try:
         for mtype, f in msgs:  # consume START
@@ -563,10 +558,10 @@ def run_gui(args):
                 break
         else:
             print("server closed before START", file=sys.stderr)
-            return
+            raise SystemExit(EXIT_NO_DATA)
     except RDATimeoutError as exc:
         print(str(exc), file=sys.stderr)
-        raise SystemExit(3) from exc
+        raise SystemExit(EXIT_NO_DATA) from exc
 
     eeg_names, pos, full_idx = build_montage(channel_names, sfreq)
     default_electrode = args.electrode if args.electrode in eeg_names else (
@@ -725,7 +720,8 @@ def run_gui(args):
                         pass
                 new_epoch.put(epoch)
         except RDATimeoutError as exc:
-            flow["error"] = str(exc)
+            print(str(exc), file=sys.stderr)
+            flow["error"] = "stream silent — no data from the recorder (see terminal)"
         flow["ended"] = True
 
     threading.Thread(target=net_loop, name="net", daemon=True).start()
@@ -799,6 +795,13 @@ def main(argv=None):
                     help="number of pulses per burst in burst mode")
     ap.add_argument("--burst-isi", type=float, default=20.0,
                     help="inter-pulse interval (ms) within a burst (20 ms = 50 Hz)")
+    ap.add_argument(
+        "--timeout",
+        type=float,
+        default=5.0,
+        help="socket timeout in seconds; raise it against a real Recorder that "
+             "may sit idle before streaming",
+    )
     args = ap.parse_args(argv)
     run_gui(args)
 

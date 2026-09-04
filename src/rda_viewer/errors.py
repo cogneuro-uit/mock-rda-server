@@ -7,6 +7,11 @@ same actionable hint regardless of which entry point the user ran.
 from __future__ import annotations
 
 import socket
+import sys
+
+# Exit codes for the CLI viewers: 2 = cannot connect, 3 = connected but no data.
+EXIT_CANNOT_CONNECT = 2
+EXIT_NO_DATA = 3
 
 
 class RDAConnectionError(ConnectionError):
@@ -54,3 +59,18 @@ def connect_client(host: str, port: int, timeout: float) -> socket.socket:
         return socket.create_connection((host, port), timeout=timeout)
     except OSError as exc:
         raise RDAConnectionError(friendly_connect_message(host, port)) from exc
+
+
+def open_client_or_exit(host: str, port: int, timeout: float):
+    """Open an :class:`RDAClient` for the CLI, exiting cleanly on connect failure.
+
+    The :class:`RDAClient` class is imported lazily to avoid an import cycle
+    (``errors`` is imported by ``minimal_client``, which defines ``RDAClient``).
+    """
+    from .minimal_client import RDAClient
+
+    try:
+        return RDAClient(host, port, timeout=timeout)
+    except RDAConnectionError as exc:
+        print(str(exc), file=sys.stderr)
+        raise SystemExit(EXIT_CANNOT_CONNECT) from exc

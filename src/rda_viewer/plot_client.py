@@ -25,8 +25,7 @@ import numpy as np
 
 from mock_rda.protocol import MsgType
 
-from .errors import RDAConnectionError, RDATimeoutError
-from .minimal_client import RDAClient
+from .errors import EXIT_NO_DATA, RDATimeoutError, open_client_or_exit
 
 
 def main() -> None:
@@ -43,6 +42,13 @@ def main() -> None:
                     help="in --save mode, re-render the PNG every N data blocks")
     ap.add_argument("--max-blocks", type=int, default=0,
                     help="stop after N data blocks (0 = run until interrupted)")
+    ap.add_argument(
+        "--timeout",
+        type=float,
+        default=5.0,
+        help="socket timeout in seconds; raise it against a real Recorder that "
+             "may sit idle before streaming",
+    )
     args = ap.parse_args()
 
     # Choose a backend before importing pyplot. Headless when saving, or on Linux
@@ -55,11 +61,7 @@ def main() -> None:
         matplotlib.use("Agg")
     import matplotlib.pyplot as plt
 
-    try:
-        client = RDAClient(args.host, args.port)
-    except RDAConnectionError as exc:
-        print(str(exc), file=sys.stderr)
-        raise SystemExit(2) from exc
+    client = open_client_or_exit(args.host, args.port, timeout=args.timeout)
     msgs = client.messages()
     try:
         for mtype, fields in msgs:  # pull START to learn the configuration
@@ -68,10 +70,11 @@ def main() -> None:
                 n_plot = min(args.channels, fields["n_channels"])
                 break
         else:
-            return
+            print("server closed before START", file=sys.stderr)
+            raise SystemExit(EXIT_NO_DATA)
     except RDATimeoutError as exc:
         print(str(exc), file=sys.stderr)
-        raise SystemExit(3) from exc
+        raise SystemExit(EXIT_NO_DATA) from exc
 
     win = int(args.seconds * sfreq)
     buf = np.zeros((n_plot, win), dtype=np.float32)
@@ -115,7 +118,7 @@ def main() -> None:
                 break
     except RDATimeoutError as exc:
         print(str(exc), file=sys.stderr)
-        raise SystemExit(3) from exc
+        raise SystemExit(EXIT_NO_DATA) from exc
     except KeyboardInterrupt:
         pass
     finally:

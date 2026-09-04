@@ -33,8 +33,7 @@ import numpy as np
 
 from mock_rda.protocol import MsgType
 
-from .errors import RDAConnectionError, RDATimeoutError
-from .minimal_client import RDAClient
+from .errors import EXIT_NO_DATA, RDATimeoutError, open_client_or_exit
 
 
 # --------------------------------------------------------------------------- #
@@ -231,11 +230,7 @@ def run_gui(args):
     from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
     from matplotlib.figure import Figure
 
-    try:
-        client = RDAClient(args.host, args.port)
-    except RDAConnectionError as exc:
-        print(str(exc), file=sys.stderr)
-        raise SystemExit(2) from exc
+    client = open_client_or_exit(args.host, args.port, timeout=args.timeout)
     msgs = client.messages()
     try:
         for mtype, f in msgs:  # consume START
@@ -246,10 +241,10 @@ def run_gui(args):
                 break
         else:
             print("server closed before START", file=sys.stderr)
-            return
+            raise SystemExit(EXIT_NO_DATA)
     except RDATimeoutError as exc:
         print(str(exc), file=sys.stderr)
-        raise SystemExit(3) from exc
+        raise SystemExit(EXIT_NO_DATA) from exc
 
     eeg_names, pos, full_idx = build_montage(channel_names, sfreq)
     default_el = args.electrode if args.electrode in eeg_names else (
@@ -403,7 +398,8 @@ def run_gui(args):
                         pass
                 new_epoch.put(epoch)
         except RDATimeoutError as exc:
-            flow["error"] = str(exc)
+            print(str(exc), file=sys.stderr)
+            flow["error"] = "stream silent — no data from the recorder (see terminal)"
         flow["ended"] = True  # stream closed / server gone
 
     threading.Thread(target=net_loop, name="net", daemon=True).start()
@@ -466,6 +462,13 @@ def main(argv=None):
     ap.add_argument("--window-ms", type=float, default=10.0,
                     help="length of the post-trigger window shown (default: 10 ms)")
     ap.add_argument("--electrode", default="C3", help="initially selected electrode")
+    ap.add_argument(
+        "--timeout",
+        type=float,
+        default=5.0,
+        help="socket timeout in seconds; raise it against a real Recorder that "
+             "may sit idle before streaming",
+    )
     args = ap.parse_args(argv)
     run_gui(args)
 
