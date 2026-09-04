@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Tkinter GUI epoch viewer for the mock RDA stream.
+"""Tkinter GUI epoch viewer for a BrainVision RDA stream.
 
 Waits for a configurable trigger marker, then shows the post-trigger window in
 three linked panels:
@@ -251,7 +251,7 @@ def run_gui(args):
         eeg_names[0] if eeg_names else channel_names[0])
 
     root = tk.Tk()
-    root.title(f"mock-rda epoch viewer — trigger: "
+    root.title(f"rda-viewer — epoch viewer (trigger: "
                f"{'any' if args.any_marker else args.trigger}")
     status_label = tk.Label(root, text="RDA: waiting for data…", anchor="w",
                             fg="white", bg="#e53935", font=("TkDefaultFont", 11, "bold"))

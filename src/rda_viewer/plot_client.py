@@ -82,7 +82,7 @@ def main() -> None:
         plt.ion()
     fig, ax = plt.subplots(figsize=(10, 6))
     line_objs = [ax.plot(np.zeros(win))[0] for _ in range(n_plot)]
-    ax.set_title(f"mock-rda ({n_plot} ch @ {sfreq:g} Hz)")
+    ax.set_title(f"rda stream ({n_plot} ch @ {sfreq:g} Hz)")
     ax.set_xlabel("samples (rolling window)")
 
     if args.save:

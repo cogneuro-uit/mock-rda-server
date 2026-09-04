@@ -19,7 +19,7 @@ layout (see [`protocol.py`](src/mock_rda/protocol.py)); no GPL code is copied.
 
 ```bash
 pip install git+https://github.com/cogneuro-uit/mock-rda-server.git
-rda-viewer                      # or: rda-itep, rda-tep, rda-plot, rda-markers
+rda-viewer                      # or: rda-itep, rda-tep, rda-plot, rda-markers, rda-dump
 ```
 
 The viewers expect a Recorder RDA stream on TCP **51244** (the 32-bit float port)
@@ -63,7 +63,7 @@ the connection opened but no START/data arrived before the timeout.
 - `rda-tep` — TMS-locked epoch viewer (butterfly only). Works live or headless
   (`--save /tmp/tep.png`); useful in a container with no display.
 - `rda-plot` — free-running rolling scope of the first few channels.
-- `rda-markers` — prints every marker with absolute sample, wall-clock time,
+- `rda-markers` — prints every marker with absolute sample, stream time,
   and gap since the previous marker.
 - `rda-dump` — minimal raw-socket reference client that prints parsed blocks
   and markers to the terminal.

@@ -578,7 +578,7 @@ def run_gui(args):
     post_samples = max(1, int(round(post_ms * sfreq / 1000.0)))
 
     root = tk.Tk()
-    root.title("mock-rda iTEP viewer — TMS/EMG epoch monitor")
+    root.title("rda-itep — TMS/EMG epoch monitor")
     status_label = tk.Label(root, text="RDA: waiting for data…", anchor="w",
                             fg="white", bg="#e53935", font=("TkDefaultFont", 11, "bold"))
     status_label.pack(side=tk.TOP, fill=tk.X)
