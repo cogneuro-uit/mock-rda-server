@@ -38,9 +38,10 @@ dotted lines, actually received triggers as red lines. Panels:
 * **One topomap per pulse** at a fixed post-pulse latency (default 3 ms).
 
 A single y-scale (shared by every line panel and all topomap color scales)
-is either set manually or computed automatically as the signal's min/max,
-excluding a small window around each pulse (default +/-2 ms, where the TMS
-artifact lives).
+defaults to -60..+60 µV; it can be set manually or computed automatically as
+the signal's min/max, excluding a small window around each pulse (default
++/-2 ms, where the TMS artifact lives). Every trace panel carries a weak
+horizontal line at 0 µV as its center line.
 
 Toolkits: Tkinter (Python stdlib) + matplotlib + MNE for the topomaps — same
 dependencies as ``rda_viewer.gui_client``, which this module reuses for the montage
@@ -325,6 +326,8 @@ class ItepViewer:
             mark_lines(ax)
         else:
             ax.axvline(0.0, color="k", lw=0.8, ls="--")
+        # Weak center line at 0 µV.
+        ax.axhline(0.0, color="0.85", lw=0.8)
         # MEP amplitude references: dotted at the inner pair, dashed at the outer.
         inner, outer = emg_guides
         for v in (-inner, inner):
@@ -372,6 +375,7 @@ class ItepViewer:
                 idx = self.full_idx[self.eeg_names.index(name)]
                 ax.plot(times_ms[i0:i1], epoch_uv[idx, i0:i1], lw=1.4, label=name)
         ax.axvline(0.0, color="k", lw=0.8, ls="--")
+        ax.axhline(0.0, color="0.85", lw=0.8)
         for lat in topo_latencies:
             ax.axvline(lat, color="0.6", lw=0.8, ls=":")
         ax.set_xlim(*short_window)
@@ -389,6 +393,7 @@ class ItepViewer:
         g = gmfp(eeg)
         ax.plot(times_ms[i0:i1], g[i0:i1], lw=1.2, color="C4")
         ax.axvline(0.0, color="k", lw=0.8, ls="--")
+        ax.axhline(0.0, color="0.85", lw=0.8)
         for lat in topo_latencies:
             ax.axvline(lat, color="0.6", lw=0.8, ls=":")
         ax.set_xlim(*long_window)
@@ -409,6 +414,7 @@ class ItepViewer:
                 idx = self.full_idx[self.eeg_names.index(name)]
                 ax.plot(times_ms[i0:i1], epoch_uv[idx, i0:i1], lw=1.2, label=name)
         ax.axvline(0.0, color="k", lw=0.8, ls="--")
+        ax.axhline(0.0, color="0.85", lw=0.8)
         for lat in topo_latencies:
             ax.axvline(lat, color="0.6", lw=0.8, ls=":")
         ax.set_xlim(*long_window)
@@ -456,6 +462,7 @@ class ItepViewer:
                 idx = self.full_idx[self.eeg_names.index(name)]
                 ax.plot(times_ms[i0:i1], epoch_uv[idx, i0:i1], lw=1.2, label=name)
         pulse_lines(ax)
+        ax.axhline(0.0, color="0.85", lw=0.8)
         ax.set_xlim(*tep_window)
         ax.set_ylim(*ylim)
         ax.set_xlabel("ms from first pulse")
@@ -487,6 +494,7 @@ class ItepViewer:
             if segs:
                 ax.plot(rel_ms, np.mean(segs, axis=0), lw=2.2, color=color, label=name)
         ax.axvline(0.0, color="k", lw=0.8, ls="--")
+        ax.axhline(0.0, color="0.85", lw=0.8)
         ax.set_xlim(*fly_window)
         ax.set_ylim(*ylim)
         ax.set_xlabel("ms from each pulse")
@@ -603,9 +611,9 @@ def run_gui(args):
 
     scale = ttk.LabelFrame(panel, text="y-scale (all panels)")
     scale.pack(side=tk.LEFT, padx=6, pady=4)
-    auto_var = tk.BooleanVar(value=True)
-    min_var = tk.StringVar(value="-50")
-    max_var = tk.StringVar(value="50")
+    auto_var = tk.BooleanVar(value=False)
+    min_var = tk.StringVar(value="-60")
+    max_var = tk.StringVar(value="60")
     ttk.Checkbutton(scale, text="auto (min/max, excl. artifact)", variable=auto_var,
                     command=lambda: redraw()).grid(row=0, column=0, columnspan=2)
     ttk.Label(scale, text="min").grid(row=1, column=0)
