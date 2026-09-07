@@ -43,6 +43,51 @@ If nothing is streaming, the viewers exit with an actionable hint, for example:
 connected, you can develop against the bundled mock stream: `mock-rda synth
 --port 51244` ..."
 
+## Typical session (how the pieces fit together)
+
+The viewers are **clients**: they connect to an RDA stream and only draw what
+arrives. A trigger-locked view (e.g. `rda-itep`) stays empty until (a) data is
+streaming on the port it watches, and (b) a marker of the expected type lands
+in that stream. So the launch order is always:
+
+1. **Start a stream** — either the real BrainVision Recorder (RDA enabled, TCP
+   51244) or the bundled mock (below). The mock window also hosts trigger
+   injection: press <kbd>Enter</kbd> there, or use its **Inject trigger** /
+   **Inject burst** buttons.
+2. **Start a viewer** in a second terminal, pointed at the same host/port.
+3. **Send triggers** — from the mock (Enter / control GUI / control socket), or
+   from your stimulator if you are against a real Recorder.
+
+If the viewer shows nothing: its window title / the server's status line
+(`clients=N`) tells you whether the connection exists at all; `rda-markers
+--port <port>` prints every marker live, so you can see whether triggers are
+reaching the stream. Exit code 2 = TCP connect failed; 3 = connected but no
+START/data within `--timeout`.
+
+> **Windows note:** port 51244 can fall inside a Hyper-V/WSL reserved port
+> range (`netsh interface ipv4 show excludedportrange protocol=tcp` shows the
+> reserved blocks), making binds fail with "access denied". Using another port
+> (e.g. 61234) on **both** server and viewer sidesteps this.
+
+## Windows double-click launchers
+
+[`scripts/windows/`](scripts/windows/) contains three double-clickable `.bat`
+files for the common demo setup (mock stream on **61234**, two EMG channels).
+They expect the package installed into the PATH-visible Python
+(`pip install -e .` from a checkout, or `pip install git+...`):
+
+| File | What it does |
+| ---- | ------------ |
+| `start-mock-synth.bat` | synthetic stream: 32 EEG + `EMG` + `EMG2` @ 5 kHz on 61234 |
+| `start-mock-file.bat`  | loops `example_data/thea_session_2.vhdr` on 61234 |
+| `start-itep.bat`       | `rda-itep --port 61234` (start a mock bat first) |
+
+Double-click `start-mock-synth.bat`, then `start-itep.bat`; press Enter in the
+server window for triggers. Both mock bats keep their window open after exit so
+errors stay readable, and `start-itep.bat` prints the exit code (2/3 as above).
+Copy shortcuts to the Desktop freely — `start-mock-file.bat` resolves the
+recording path relative to the repo, so it works from any shortcut location.
+
 ## The viewers
 
 All viewers share the same `--host` / `--port` defaults, the same
@@ -224,6 +269,7 @@ type 9, or both).
 ## Repository layout
 
 ```
+scripts/windows/       # double-click .bat launchers (mock stream on 61234 + rda-itep)
 src/rda_viewer/
   __init__.py        # live visualizer package
   errors.py          # friendly, actionable connection-error messages

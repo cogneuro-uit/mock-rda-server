@@ -11,6 +11,10 @@ dist/
 
 # Env / tooling
 .venv/
+.deps/
+.tools/
+.uv-cache/
+.uv-python/
 *.log
 
 # OS
